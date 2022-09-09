@@ -12,7 +12,7 @@ With loosened travel restrictions, we aim to help high school / undergraduate st
 
 ## Individual Contribution - COVID-19 Country Clustering
 As a data scientist of the group, I imputed COVID-19 missing data using a Multiple Imputation by Chained Equations (MICE) technique. <br>
-Then I computed Dynamic Time Warping (DTW) distance matrix to identify similarity in shapes between two time series data. With this DTW distance matrix, I clustered countries using a hierarchical clutering algorithm. The below dendrgoram shows COVID-19 country clusters.
+Then I computed Dynamic Time Warping (DTW) distance matrix to identify similarity in shapes between two time series data. With this DTW distance matrix, I clustered countries using a hierarchical clutering algorithm with a complete linkage. The below dendrgoram shows COVID-19 country clusters.
 
 <p align = "center">
   <img src = "https://github.com/SanghyunKim1/Data-Science-Capstone-Project/blob/master/COVID-19%20Clusters.png" width="800" height="450">
