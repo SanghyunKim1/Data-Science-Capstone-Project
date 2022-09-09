@@ -10,8 +10,13 @@ Link to the final report: [Final Report](https://sanghyunkim1.github.io/Data-Sci
 ## Aim
 With loosened travel restrictions, we aim to help high school / undergraduate students make better decisions when choosing a university to study overseas. <br> As our country clustering system takes into account (1) COVID-19 spread, (2) country socioeconomic index, and (3) university rankings by subject, we expect our digital dashboard to help students find the most suitable countries for their study.
 
-## Individual Contribution
-As a data scientist of the group, I imputed COVID-19 missing data using a Multiple Imputation by Chained Equations (MICE) technique. Then I computed Dynamic Time Warping (DTW) distance matrix to identify similarity in shapes between two time series data. With this DTW distance matrix, I clustered countries using a hierarchical clutering algorithm.
+## Individual Contribution - COVID-19 Country Clustering
+As a data scientist of the group, I imputed COVID-19 missing data using a Multiple Imputation by Chained Equations (MICE) technique. <br>
+Then I computed Dynamic Time Warping (DTW) distance matrix to identify similarity in shapes between two time series data. With this DTW distance matrix, I clustered countries using a hierarchical clutering algorithm. <br>
+The below dendrgoram shows COVID-19 country clusters.
+
+<img src = "https://sanghyunkim1.github.io/Data-Science-Capstone-Project/COVID-19 Clusters.png" width="600" height="600">
+
 
 
 ## Acknoledgements
