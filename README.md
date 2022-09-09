@@ -15,7 +15,7 @@ As a data scientist of the group, I imputed COVID-19 missing data using a Multip
 Then I computed Dynamic Time Warping (DTW) distance matrix to identify similarity in shapes between two time series data. With this DTW distance matrix, I clustered countries using a hierarchical clutering algorithm. <br>
 The below dendrgoram shows COVID-19 country clusters.
 
-<img src = "https://sanghyunkim1.github.io/Data-Science-Capstone-Project/COVID-19 Clusters.png" width="600" height="600">
+<img src = "[https://sanghyunkim1.github.io/Data-Science-Capstone-Project/COVID-19 Clusters.png](https://github.com/SanghyunKim1/Data-Science-Capstone-Project/blob/master/COVID-19%20Clusters.png)" width="600" height="600">
 
 
 
