@@ -1,0 +1,682 @@
+---
+title: "COVID Country Clustering"
+author: "Sanghyun Kim"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    code_folding: hide
+    number_sections: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+<style type="text/css">
+
+body, td {
+   font-size: 16px;
+}
+code.r{
+  font-size: 12px;
+}
+pre {
+  font-size: 12px
+}
+p {line-height: 1.5em;}
+</style>
+
+```{r setup, include = FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+opts_chunk$set(message = FALSE, warning = FALSE)
+options(scipen = 999)
+```
+
+```{r, results = "hide"}
+library(tidyverse)
+library(reshape2)
+library(DT)
+library(visdat)
+library(mice)
+library(plotly)
+library(ggcorrplot)
+library(ggpubr)
+library(randomcoloR)
+library(pheatmap)
+library(TSclust)
+library(dtwclust)
+library(ggdendro)
+library(factoextra)
+library(mclust)
+library(randomForest)
+```
+
+
+# Data Cleaning
+```{r, cache = TRUE}
+covid_df = read.csv("covid_cleaned.csv")
+
+covid_df$date = as.Date(covid_df$date)
+
+unique(covid_df$location)
+```
+
+```{r}
+covid_df1 = covid_df %>% filter(date >= "2020-03-11")
+
+# replace vaccinations-related missing data with 0 that appear at the beginning of the pandemic when the vaccines didn't even exist
+covid_df1s = split.data.frame(covid_df1, covid_df1$location)
+
+for (i in 1:length(covid_df1s)) {
+  vaccine_ind = which(grepl("vaccin", colnames(covid_df1s[[i]])))
+  non_na_vaccine = which(!is.na(covid_df1s[[i]][vaccine_ind]))
+  first_non_na = non_na_vaccine[1]
+  covid_df1s[[i]][1:(first_non_na-1), vaccine_ind] = covid_df1s[[i]][1:(first_non_na-1), vaccine_ind] %>% mutate_all(~replace(., is.na(.), 0))
+}
+
+covid_df1 = unsplit(covid_df1s, covid_df1$location)
+
+na_perc = melt(colMeans(is.na(covid_df1))) %>% round(3) %>% arrange(desc(value))
+datatable(na_perc)
+
+high_na_perc = na_perc %>% filter(value > 0.5)
+na_vars = rownames(high_na_perc)
+```
+
+```{r}
+# drop variables where more than 50% of values are missing 
+covid_df1 = covid_df1 %>% dplyr::select(-na_vars)
+
+vis_miss(covid_df1, warn_large_data = FALSE) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+
+covid_df1s = split.data.frame(covid_df1, covid_df1$location)
+vis_miss(covid_df1s[[2]]) +
+  labs(title = covid_df1s[[2]]$location) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+
+covid_df1 = covid_df1 %>% filter(location != "Armenia")
+```
+
+```{r}
+# the proportion of missing data in each column for each country data
+na_per_country = covid_df1 %>% 
+  group_by(location) %>% 
+  summarise_all(funs(round(mean(is.na(.)), 3)))
+
+na_vars2 = na_per_country[, -1] %>% select_if(~any(. > 0.5)) %>% colnames()
+```
+
+```{r}
+covid_df2 = covid_df1 %>% dplyr::select(-na_vars2)
+
+vis_miss(covid_df2, warn_large_data = FALSE) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+```
+
+```{r}
+num_vars = which(sapply(covid_df2, is.numeric))
+covid_num_df = covid_df2[, num_vars]
+
+cor_mat = cor(covid_num_df, use = "complete.obs")
+
+p = ggcorrplot(cor_mat, hc.order = TRUE, type = "lower", outline.col = "white") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, size = 6, vjust = 1, hjust = 1),
+        axis.text.y = element_text(size = 6))
+
+ggplotly(p)
+
+collinear_vars = c("new_cases", "new_cases_per_million", "new_deaths", "new_deaths_per_million", "total_cases_per_million",
+                   "new_people_vaccinated_smoothed_per_hundred", "new_people_vaccinated_smoothed", "new_vaccinations_smoothed",
+                   "total_deaths", "total_cases")
+
+covid_df3 = covid_df2 %>% dplyr::select(-collinear_vars)
+```
+# Data Imputation
+```{r, results = "hide", cache = TRUE}
+covid_df3s = split.data.frame(covid_df3, covid_df3$location)
+
+n = length(covid_df3s)
+covid_imputed_dfs = setNames(replicate(n, data.frame()), unique(covid_df3$location))
+
+for (i in 1:length(covid_df3s)) {
+  imp = mice(covid_df3s[[i]], m = 5, method = "rf", maxit = 5, seed = 3888, rfPackage = "randomForest")
+  covid_imputed_dfs[[i]] = complete(imp, 1)
+}
+
+covid_imputed_df = unsplit(covid_imputed_dfs, covid_df2$location)
+```
+
+```{r}
+vis_miss(covid_imputed_df, warn_large_data = FALSE) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+
+# select unique dates where 'new_cases_smoothed_per_million' are missing for any country
+na_cases_ind = which(is.na(covid_imputed_df %>% select(new_cases_smoothed_per_million)))
+na_cases_date = covid_imputed_df[na_cases_ind, ] %>% select(date)
+na_cases_dates = unique(na_cases_date)
+
+# select unique dates where 'new_deaths_smoothed_per_million' are missing for any country
+na_deaths_ind = which(is.na(covid_imputed_df %>% select(new_deaths_smoothed_per_million)))
+na_deaths_date = covid_imputed_df[na_deaths_ind, ] %>% select(date)
+na_deaths_dates = unique(na_deaths_date)
+
+# drop the union of those two sets of dates for every country
+dates_to_drop = union(na_cases_dates, na_deaths_dates) %>% pull()
+covid_imputed_df1 = covid_imputed_df %>% filter(!date %in% dates_to_drop)
+
+vis_miss(covid_imputed_df1, warn_large_data = FALSE) + 
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+```
+
+```{r}
+# raw data time series plots
+nColor =  length(unique(covid_df3$location))
+myColor = randomcoloR::distinctColorPalette(k = nColor)
+
+p1 = covid_df3 %>% ggplot() +
+    aes(x = date, y = new_cases_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw() +
+    scale_colour_manual(values = myColor) +
+    ylab("New Cases Smoothed per Million") +
+    labs(color = "Country/Region", title = "Original New Cases Smoothed per Million")
+ggplotly(p1)
+
+p2 = covid_df3 %>% ggplot() +
+    aes(x = date, y = new_deaths_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw() +
+    scale_colour_manual(values = myColor) +
+    ylab("New Deaths per Million") +
+    labs(color = "Country/Region", title = "Original New Deaths per Million")
+ggplotly(p2)
+
+p3 = covid_df3 %>% ggplot() +
+    aes(x = date, y = stringency_index, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw() +
+    scale_colour_manual(values = myColor) +
+    ylab("Stringency Index") +
+    labs(color = "Country/Region", title = "Original Stringency Index")
+ggplotly(p3)
+```
+
+
+```{r}
+# imputed data time series plots
+p4 = covid_imputed_df1 %>% ggplot() +
+    aes(x = date, y = new_cases_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw()  +
+    scale_colour_manual(values = myColor) +
+    ylab("New Cases Smoothed per Million") +
+    labs(color = "Country/Region", title = "Imputed New Cases Smoothed per Million")
+ggplotly(p4)
+
+p5 = covid_imputed_df1 %>% ggplot() +
+    aes(x = date, y = new_deaths_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw()  +
+    scale_colour_manual(values = myColor) +
+    ylab("New Deaths Smoothed per Million") +
+    labs(color = "Country/Region", title = "Imputed New Deaths Smoothed per Million")
+ggplotly(p5)
+
+p6 = covid_imputed_df1 %>% ggplot() +
+    aes(x = date, y = stringency_index, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw()  +
+    scale_colour_manual(values = myColor) +
+    ylab("Stringency Index") +
+    labs(color = "Country/Region", title = "Imputed Stringency Index")
+ggplotly(p6)
+```
+
+# Standardization
+```{r}
+num_vars = which(sapply(covid_imputed_df1, is.numeric))
+covid_imputed_num_df = covid_imputed_df1[, num_vars]
+covid_imputed_cat_df = covid_imputed_df1[, -num_vars]
+
+robust_scalar = function(x){
+  (x- median(x)) / (quantile(x, probs = 0.75) - quantile(x, probs = 0.25))
+}
+
+norm_covid_imputed_df = apply(covid_imputed_num_df, 2, robust_scalar) %>% data.frame()
+
+melt(norm_covid_imputed_df) %>% ggplot() +
+  aes(x = variable, y = value) + 
+  geom_boxplot(outlier.shape = 20, outlier.size = 0.5, outlier.color = "red") +
+  coord_flip() +
+  theme_bw()
+
+melt(norm_covid_imputed_df) %>% ggplot() +
+  aes(x = value) + 
+  geom_histogram() +
+  facet_wrap(~ variable) +
+  theme_bw()
+
+norm_covid_imputed_df = cbind(covid_imputed_cat_df, norm_covid_imputed_df)
+
+final_vars = c("location", "date", "new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")
+
+final_norm_imputed_covid_df = norm_covid_imputed_df[, final_vars]
+```
+
+```{r}
+dates = final_norm_imputed_covid_df %>% group_by(location) %>% summarize(min_date = min(date),
+                                                                         max_date = max(date))
+
+max_min_date = max(dates$min_date)
+min_max_date = min(dates$max_date)
+
+final_norm_imputed_covid_df2 = final_norm_imputed_covid_df %>% filter(date >= max_min_date & date <= min_max_date)
+df_list = split.data.frame(final_norm_imputed_covid_df2[, c("date","new_cases_smoothed_per_million", 
+                                                            "new_deaths_smoothed_per_million", "stringency_index")],
+                           final_norm_imputed_covid_df2$location)
+```
+
+# Distance-based Clustering
+## Euclidean Distance
+```{r}
+l_p_distance = function(x, y, p){
+    distance = sum((x - y)^p, na.rm = TRUE)^(1/p)
+    return(distance)
+}
+```
+
+```{r}
+p = 2
+n = length(unique(final_norm_imputed_covid_df2$location))
+
+d_mat_eucl = matrix(0, n, n)
+dateindex = df_list[[1]]$date
+
+for (i in 1:n ){
+    for (j in 1:n){
+          index_i = match(df_list[[i]]$date, dateindex)
+          index_j = match(df_list[[j]]$date, dateindex)
+          ts_i = df_list[[i]][index_i, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          ts_j = df_list[[j]][index_j, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          d_mat_eucl[i,j] = l_p_distance(ts_i, ts_j, p)
+    }
+}
+
+rownames(d_mat_eucl) = colnames(d_mat_eucl) = unique(final_norm_imputed_covid_df2$location)
+d_mat_eucl[!is.finite(d_mat_eucl)] = 0
+```
+
+```{r}
+matrix_dist = as.dist(d_mat_eucl)
+hclust_res1 = hclust(matrix_dist, method = "ward.D")  
+plot(hclust_res1, cex = 0.6, main = "Euclidean Distance-based Hierarchical Clustering Dendrogram")
+
+pheatmap(d_mat_eucl, cluster_cols = T, cluster_rows = T,
+         main = "L^2 distance", clustering_method = "ward.D",
+         fontsize_row = 4, fontsize_col = 4)
+
+cutree_eucl = cutree(hclust_res1, k = 5)
+cutree_eucl
+```
+
+## Average Distance
+```{r}
+avg_distance = function(x, y, n) {
+  distance = (sum((x - y)^2, na.rm = TRUE) / n)^(1/2)
+  return(distance)
+}
+```
+
+```{r}
+d_mat_avg = matrix(0, n, n)
+dateindex = df_list[[1]]$date
+
+for (i in 1:n ){
+    for (j in 1:n){
+          index_i = match(df_list[[i]]$date, dateindex)
+          index_j = match(df_list[[j]]$date, dateindex)
+          ts_i = df_list[[i]][index_i, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          ts_j = df_list[[j]][index_j, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          d_mat_avg[i,j] = avg_distance(ts_i, ts_j, ncol(ts_i))
+    }
+}
+
+rownames(d_mat_avg) = colnames(d_mat_avg) = unique(final_norm_imputed_covid_df2$location)
+d_mat_avg[!is.finite(d_mat_avg)] = 0
+```
+
+```{r}
+matrix_dist = as.dist(d_mat_avg)
+hclust_res2 = hclust(matrix_dist, method = "ward.D")  
+plot(hclust_res2, cex = 0.6, main = "Average Distance-based Hierarchical Clustering Dendrogram")
+
+pheatmap(d_mat_avg, cluster_cols = T, cluster_rows = T,
+         main = "Average distance", clustering_method = "ward.D",
+         fontsize_row = 4, fontsize_col = 4)
+
+cutree_avg = cutree(hclust_res2, k = 5)
+```
+
+## Dynamic Time Warping
+### complete linkage
+```{r}
+dtw_covid_df_list = split.data.frame(final_norm_imputed_covid_df2[, c("new_cases_smoothed_per_million",
+                                                                      "new_deaths_smoothed_per_million",
+                                                                      "stringency_index")], final_norm_imputed_covid_df2$location)
+
+dtw_covid_mat_list = lapply(dtw_covid_df_list, as.matrix)
+
+dtw_covid_df = final_norm_imputed_covid_df2 %>% select(date, location, new_cases_smoothed_per_million, new_deaths_smoothed_per_million, stringency_index)
+```
+
+```{r}
+Nclust = 6
+dtw_model = tsclust(series = dtw_covid_mat_list, 
+                    type = "hierarchical", 
+                    k = Nclust, 
+                    distance = "dtw",
+                    control = hierarchical_control(method = "complete"),
+                    preproc = NULL,
+                    trace = TRUE)
+
+dtw_data = dendro_data(dtw_model, type = "rectangle")
+labels_order = dtw_data$labels$label
+
+dtw_result = data.frame(label = names(dtw_covid_mat_list),
+                        cluster = factor(cutree(dtw_model, k = Nclust)))
+
+dtw_data[["labels"]] = merge(dtw_data[["labels"]], dtw_result, by = "label")
+dtw_result = full_join(dtw_result, dtw_data$labels, by = c("label", "cluster")) %>% arrange(x)
+```
+
+```{r}
+cluster_box = aggregate(x ~ cluster, label(dtw_data), range)
+cluster_box = data.frame(cluster_box$cluster,cluster_box$x)
+cluster_threshold = mean(dtw_model$height[length(dtw_model$height) - ((Nclust-2):(Nclust-1))])
+
+numColors = length(levels(dtw_result$cluster)) # how many colors you need
+getColors = scales::hue_pal() # create a function that takes a number and returns a qualitative palette of that length (from the scales package)
+myPalette = getColors(numColors)
+names(myPalette) = levels(dtw_result$cluster) # give every color an appropriate name
+n = nrow(dtw_result) # number of countries
+
+covid_dtw_p = ggplot() + 
+  geom_rect(data = cluster_box, 
+            aes(xmin = X1 - 0.3, xmax = X2 + 0.3, ymin = 0, ymax = cluster_threshold, color = cluster_box.cluster), 
+            fill = NA) +
+  geom_segment(data = segment(dtw_data), aes(x = x, y = y, xend = xend, yend = yend)) +
+  scale_y_continuous("Distance") + 
+  scale_x_continuous("", breaks = 1:n, labels = labels_order) + 
+  guides(color = "none", fill = "none") +
+  labs(title = "DTW Distance-based Hierarchical Clustering Dendrogram",
+       caption = "Figure 1")
+
+covid_dtw_p +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette[dtw_result$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.caption = element_text(hjust = 0.5, size = 10))
+
+# dendrogram with margin for the report
+covid_dtw_p_report = covid_dtw_p + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette[dtw_result$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.caption = element_text(hjust = 0.5, size = 10),
+        plot.margin = unit(c(0.1, -0.6, -1.5, 0), "cm"))
+```
+
+### average linkage
+```{r}
+Nclust = 6
+dtw_model2 = tsclust(series = dtw_covid_mat_list,
+                    type = "hierarchical",
+                    k = Nclust,
+                    distance = "dtw",
+                    control = hierarchical_control(method = "average"),
+                    preproc = NULL,
+                    trace = TRUE)
+
+dtw_data2 = dendro_data(dtw_model2, type = "rectangle")
+labels_order2 = dtw_data2$labels$label
+
+dtw_result2 = data.frame(label = names(dtw_covid_mat_list),
+                        cluster = factor(cutree(dtw_model2, k = Nclust)))
+
+dtw_data2[["labels"]] = merge(dtw_data2[["labels"]], dtw_result2, by = "label")
+dtw_result2 = full_join(dtw_result2, dtw_data2$labels, by = c("label", "cluster")) %>% arrange(x)
+```
+
+```{r}
+cluster_box2 = aggregate(x ~ cluster, label(dtw_data2), range)
+cluster_box2 = data.frame(cluster_box2$cluster, cluster_box2$x)
+cluster_threshold2 = mean(dtw_model2$height[length(dtw_model2$height) - ((Nclust-2):(Nclust-1))])
+
+numColors2 = length(levels(dtw_result2$cluster)) # How many colors you need
+getColors2 = scales::hue_pal() # Create a function that takes a number and returns a qualitative palette of that length (from the scales package)
+myPalette2 = getColors(numColors2)
+names(myPalette2) = levels(dtw_result2$cluster) # Give every color an appropriate name
+n2 = nrow(dtw_result2) # number of countries
+
+ggplot() +
+  geom_rect(data = cluster_box2,
+            aes(xmin = X1 - 0.3, xmax = X2 + 0.3, ymin = 0, ymax = cluster_threshold2, color = cluster_box2.cluster),
+            fill = NA) +
+  geom_segment(data = segment(dtw_data2), aes(x = x, y = y, xend = xend, yend = yend)) +
+  scale_y_continuous("Distance") +
+  scale_x_continuous("", breaks = 1:n2, labels = labels_order2) +
+  guides(color = "none", fill = "none") +
+  labs(title = "DTW Distance-based Hierarchical Clustering Dendrogram") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette2[dtw_result2$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+### single linkage
+```{r}
+Nclust = 6
+dtw_model3 = tsclust(series = dtw_covid_mat_list,
+                    type = "hierarchical",
+                    k = Nclust,
+                    distance = "dtw",
+                    control = hierarchical_control(method = "single"),
+                    preproc = NULL,
+                    trace = TRUE)
+
+dtw_data3 = dendro_data(dtw_model3, type = "rectangle")
+labels_order3 = dtw_data3$labels$label
+
+dtw_result3 = data.frame(label = names(dtw_covid_mat_list),
+                        cluster = factor(cutree(dtw_model3, k = Nclust)))
+
+dtw_data3[["labels"]] = merge(dtw_data3[["labels"]], dtw_result3, by = "label")
+dtw_result3 = full_join(dtw_result3, dtw_data3$labels, by = c("label", "cluster")) %>% arrange(x)
+```
+
+```{r}
+cluster_box3 = aggregate(x ~ cluster, label(dtw_data3), range)
+cluster_box3 = data.frame(cluster_box3$cluster, cluster_box3$x)
+cluster_threshold3 = mean(dtw_model3$height[length(dtw_model3$height) - ((Nclust-2):(Nclust-1))])
+
+numColors3 = length(levels(dtw_result3$cluster)) # How many colors you need
+getColors3 = scales::hue_pal() # Create a function that takes a number and returns a qualitative palette of that length (from the scales package)
+myPalette3 = getColors(numColors3)
+names(myPalette3) = levels(dtw_result3$cluster) # Give every color an appropriate name
+n3 = nrow(dtw_result3) # number of countries
+
+ggplot() +
+  geom_rect(data = cluster_box3,
+            aes(xmin = X1 - 0.3, xmax = X2 + 0.3, ymin = 0, ymax = cluster_threshold3, color = cluster_box3.cluster),
+            fill = NA) +
+  geom_segment(data = segment(dtw_data3), aes(x = x, y = y, xend = xend, yend = yend)) +
+  scale_y_continuous("Distance") +
+  scale_x_continuous("", breaks = 1:n3, labels = labels_order3) +
+  guides(color = "none", fill = "none") +
+  labs(title = "DTW Distance-based Hierarchical Clustering Dendrogram") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette[dtw_result3$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+# Evaluation
+```{r}
+# merge clustering results and final COVID dataset
+eucl_hclust_df = rownames_to_column(melt(cutree_eucl), var = "location")
+colnames(eucl_hclust_df)[2] = "eucl_hclust"
+
+avg_hclust_df = rownames_to_column(melt(cutree_avg), var = "location")
+colnames(avg_hclust_df)[2] = "avg_hclust"
+
+dtw_hclust_df = dtw_result[, 1:2] %>% mutate(location = label) %>% select(-label)
+dtw_hclust_df = dtw_hclust_df[, 2:1]
+colnames(dtw_hclust_df)[2] = "dtw_hclust"
+
+cluster_df = merge(merge(eucl_hclust_df, avg_hclust_df, by = "location"), dtw_hclust_df, by = "location")
+
+final_norm_imputed_covid_df3 = merge(final_norm_imputed_covid_df2, cluster_df, by = "location")
+final_norm_imputed_covid_df3 = final_norm_imputed_covid_df3 %>% mutate(eucl_hclust = as.factor(eucl_hclust),
+                                                                       avg_hclust = as.factor(avg_hclust))
+```
+
+## Stability
+```{r, results = "hide", cache = TRUE}
+n = 100
+aris = c()
+
+for (i in 1:n) {
+  random_countires = sample(1:length(dtw_covid_mat_list), 8, replace = FALSE)
+  dtw_covid_mat_list2 = dtw_covid_mat_list[-random_countires]
+  length(dtw_covid_mat_list2)
+  
+  Nclust = 5
+  dtw_model_eval = tsclust(series = dtw_covid_mat_list2,
+                           type = "hierarchical",
+                           k = Nclust,
+                           distance = "dtw",
+                           control = hierarchical_control(method = "complete"),
+                           preproc = NULL,
+                           trace = TRUE)
+  
+  dtw_data_eval = dendro_data(dtw_model_eval, type = "rectangle")
+  labels_order_eval = dtw_data_eval$labels$label
+  
+  dtw_result_eval = data.frame(label = names(dtw_covid_mat_list2),
+                               cluster = factor(cutree(dtw_model_eval, k = Nclust)))
+  
+  dtw_data_eval[["labels"]] = merge(dtw_data_eval[["labels"]], dtw_result_eval, by = "label")
+  dtw_result_eval = full_join(dtw_result_eval,
+                              dtw_data_eval$labels,
+                              by = c("label", "cluster")) %>% arrange(x)
+  dtw_hclust_eval_df = dtw_result_eval[, 1:2] %>% mutate(location = label) %>% select(-label)
+  dtw_hclust_eval_df = dtw_hclust_eval_df[, 2:1]
+  colnames(dtw_hclust_eval_df)[2] = "dtw_hclust_evaluation"
+  
+  dtw_stability_df = merge(dtw_hclust_df, dtw_hclust_eval_df, by = "location")
+  ari = adjustedRandIndex(dtw_stability_df$dtw_hclust, dtw_stability_df$dtw_hclust_evaluation)
+  aris = append(aris, ari)
+}
+```
+
+```{r}
+ari_p = ggplot() +
+  geom_boxplot(aes(x = aris), fill = "navy", alpha = 0.3) +
+  labs(x = "Adjusted Rand Index", 
+       title = "Adjusted Rand Index Distribution of a 100-time Simulation \nfor the Stability of DTW Distance-based Hierarchical Clustering",
+       caption = "Figure 2") +
+  theme_bw()
+
+ari_p + theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+              plot.caption = element_text(hjust = 0.5, size = 10))
+
+ari_p_report = ari_p +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 10),
+        plot.caption = element_text(hjust = 0.5, size = 10),
+        plot.margin = unit(c(0.3, -0.6, 1, 0),"cm"))
+
+ari_stat = c(var(aris), min(aris), mean(aris), median(aris), max(aris)) %>% round(3) %>% matrix(nrow = 1)
+rownames(ari_stat) = "Value"
+colnames(ari_stat) = c("Variance", "Min", "Mean", "Median", "Max")
+ari_stat %>% kable(caption = "Adjusted Rand Index Summary Statistics")
+```
+
+```{r}
+# remove bad clustering labels
+redund_clust = c("eucl_hclust", "avg_hclust")
+covid_cluster_df = final_norm_imputed_covid_df3[, !names(final_norm_imputed_covid_df3) %in% redund_clust]
+
+rf2 = randomForest(dtw_hclust ~ new_cases_smoothed_per_million +
+                     new_deaths_smoothed_per_million +
+                     stringency_index,
+                   data = covid_cluster_df, importance = TRUE)
+
+feat_imp_df = importance(rf2) %>%
+  data.frame() %>%
+  mutate(feature = row.names(.))
+
+ggplot(feat_imp_df[tail(order(feat_imp_df$MeanDecreaseGini), 5), ],
+       aes(x = reorder(feature, MeanDecreaseGini),
+           y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Feature", y = "Importance", title = "Feature Importance") +
+  theme_bw()
+```
+
+```{r}
+feat_imp_df = feat_imp_df %>% mutate(FeatureWeigths = round(MeanDecreaseGini / sum(MeanDecreaseGini), 2))
+
+latest_covid_cluster_df = covid_cluster_df %>% filter(date == max(date))
+
+latest_covid_cluster_df = latest_covid_cluster_df %>% mutate(covid_risk = (0.32*new_cases_smoothed_per_million) + 
+                                                               (0.33*new_deaths_smoothed_per_million) -
+                                                               (0.35*stringency_index))
+
+latest_covid_cluster_df = latest_covid_cluster_df %>%
+  mutate(covid_risk_std = scale(covid_risk, center = TRUE, scale = TRUE),
+         covid_risk_class = case_when(
+           (covid_risk_std <= quantile(covid_risk_std, 0.33)) ~ "Low",
+           (covid_risk_std > quantile(covid_risk_std, 0.33) & covid_risk_std <= quantile(covid_risk_std, 0.67)) ~ "Medium",
+           (covid_risk_std > quantile(covid_risk_std, 0.67)) ~ "High"))
+
+latest_covid_cluster_df %>% filter(covid_risk_class == "High") %>% select(location)
+
+stringnecy_ind_std = covid_imputed_df %>% 
+  mutate(stringency_index_std = scale(stringency_index, center = TRUE, scale = TRUE)) %>% 
+  select(date, location, stringency_index_std)
+
+latest_stringency_ind_std = stringnecy_ind_std %>%
+  filter(date == "2022-05-12") %>%
+  mutate(travel_restrictions = case_when(
+           (stringency_index_std <= quantile(stringency_index_std, 0.33)) ~ "Low",
+           (stringency_index_std > quantile(stringency_index_std, 0.33) &
+              stringency_index_std <= quantile(stringency_index_std, 0.67)) ~ "Medium",
+           (stringency_index_std > quantile(stringency_index_std, 0.67)) ~ "High"))
+
+latest_covid_df = merge(latest_covid_cluster_df, latest_stringency_ind_std %>% select(date, location, travel_restrictions), by = c("date", "location"))
+
+write.csv(latest_covid_df, "latest_covid_cluster.csv")
+
+latest_covid_df %>% filter(dtw_hclust == "1") %>% select(covid_risk_class) %>% group_by(covid_risk_class) %>% count()
+latest_covid_df %>% filter(dtw_hclust == "2") %>% select(covid_risk_class) %>% group_by(covid_risk_class) %>% count()
+latest_covid_df %>% filter(dtw_hclust == "3") %>% select(covid_risk_class) %>% group_by(covid_risk_class) %>% count()
+latest_covid_df %>% filter(dtw_hclust == "4") %>% select(covid_risk_class) %>% group_by(covid_risk_class) %>% count()
+latest_covid_df %>% filter(dtw_hclust == "5") %>% select(covid_risk_class) %>% group_by(covid_risk_class) %>% count()
+latest_covid_df %>% filter(dtw_hclust == "6") %>% select(covid_risk_class) %>% group_by(covid_risk_class) %>% count()
+
+
+covid_p = ggarrange(covid_dtw_p_report, ari_p_report, ncol = 1)
+covid_p
+```

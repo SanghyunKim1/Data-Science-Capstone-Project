@@ -1,0 +1,12 @@
+﻿Methods,Description
+Cophenetic Coefficient,"Defines goodness of fit of clusters, and conveys how faithfully tree (dendrogram) represent dissimilarity among observations."
+Agglomerative Coefficient,"Defines the strength of clustering structure, dividing dissimilarity of the first cluster it joins by dissimilarity of the final merger."
+Average Silhouette Width,It represents how similar each point is to its cluster compared to other clusters.
+Dunn Index,"One of the internal cluster evaluations, and defines how clusters are compact with small variance. "
+Elbow Method,Finds optimal k where within-sum of squared distance starts to decrease abruptly.
+Silhouette Method,Finds k where the Silhouette score is maximised. The silhouette score of each data point is measured by how much a point is similar to its own cluster compared to neighbouring clusters. It ranges from -1 to 1.
+Gap statistics,"Finds k that maximises gap statistic, where gap statistic is the deviation of the observed value from the expected value under the NULL hypothesis. This means it expects data points to be in random uniform distribution."
+Average Linkage,It defines the distance between two clusters to be the average distance between the first cluster and the second cluster. 
+Ward Linkage,It defines the distance between two clusters by computing the increase in the Error Sum of Squares (ESS) after merging two clusters.
+Complete Linkage,"It determines the distance between clusters by the farthest distance between any two data points in the distance matrix (Sharma and Batra, 2019, p.570)."
+Single Linkage,It looks at the closest data points to find similar clusters. 

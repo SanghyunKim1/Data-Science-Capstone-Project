@@ -1,0 +1,1943 @@
+---
+title: "DATA3888 COVID C03 Report"
+author: "Sanghyun Kim, Christopher Tong, Ann Munkhbayar, Lawrence Chen, Chengyi Jin and Xulin Wang"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    code_folding: hide
+    number_sections: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+<style type="text/css">
+
+body, td {
+   font-size: 16px;
+}
+code.r{
+  font-size: 12px;
+}
+pre {
+  font-size: 12px
+}
+p {line-height: 1.5em;}
+</style>
+
+```{r setup, include = FALSE}
+# html format setting
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+opts_chunk$set(message = FALSE, warning = FALSE)
+options(scipen = 999)
+```
+
+# Executive Summary
+**Background**: The coronavirus pandemic makes studying abroad becomes arduous, and there is a remarkable absence of tools to help students obtain and compare the information. Thus, a tool is needed to support them to improve their decision quality when selecting a university. 
+
+**Methodology**: We used a Dynamic Time Warping distance-based hierarchical clustering algorithm to cluster COVID-19 data, and used a Manhattan distance-based hierarchical clustering algorithm to cluster socioeconomic index data separately. Then we adopted the LIN distance-based hierarchical clustering algorithm to combine COVID-19 and socioeconomic index clustering systems. Consequently, we employed Tableau to deploy the interactive dashboard. 
+
+**Findings**: The accuracy and stability of our final model are 0.6 and 0.69, respectively. 
+
+**Conclusion**: Ultimately, the dashboard can support students’ decisions to choose a university to study overseas.
+
+
+
+# Introduction
+As the coronavirus pandemic is upending all sectors of our society, decision-making is getting more arduous. Wu et al. (2022) investigated study abroad decision-making, Their results indicated that the epidemic crisis and image of location impact students’ willingness to study abroad. Correspondingly, our user research investigated factors that impact students’ decisions when choosing a university to study overseas ($N = 41$). The determinants include university reputation, cost of living, travel restrictions, health and safety of locations.
+
+Yet, there is a remarkable absence of tools to help students obtain and compare information for deciding on a university to study abroad. The decision-making process becomes complex and inefficient (Phillips-Wren & Adya, 2020), as students need to collect, combine and analyse all information, which influences their decision quality.
+
+Therefore, our team aims to deploy a digital dashboard for students who wish to study overseas to support their decision-making. Through the utilisation of machine learning techniques, our dashboard helps students centralise information and cluster location based on similarities in COVID-19 spread trends and socioeconomic status. Consequently, it supports students to make efficient and high-quality decisions during this challenging period (Caruso et al., 2017).
+
+
+
+# Methodology
+
+![](Plots/figure_1.png)
+
+## Part A. Process
+
+
+### Data Preprocessing
+The COVID-19 data were obtained from Our [World in Data](https://github.com/owid/covid-19-data/tree/master/public/data). While socioeconomic index data were obtained from the NUMBEO and we used 2022 data, For data descriptions, please refer to Appendix 8.2.
+
+We used the following three data sets: COVID-19 data, socioeconomic index data and QS University data. We first filtered out countries that did not appear in the QS university data from the original COVID-19 data set. Then we also combined different socioeconomic index data, such as the cost of living or safety index.
+
+With the cleaned COVID-19 data set obtained above, we first handled missing data.
+To impute missing data, the precise identification of missing data types is essential. According to Jakobsen et al. (2017, p.2), if missing data are only dependent upon observed data, such missing data are said to be missing at random (MAR), and multiple imputations may result in unbiased predictions in the presence of MAR.
+
+Given the COVID-19 data are time-series data, observations are dependent on each other, and therefore, missing values depend on observed values.
+Yet, according to Our World in Data (2022), missing data were generated when its data source reported negative values due to a data correction. Therefore, we concluded that our COVID missing data were MAR, as there was no relationship between the unobserved values themselves.
+
+Based on these assumptions, we imputed missing data through Multiple Imputation by Chained Equations (MICE). MICE is a statistical process of substituting missing data by predicting missing data multiple times using a regression model.
+
+Due to the high dimension and complicated structure of time-series data, we used a random forest regression model to impute missing data, as suggested in a study conducted by Wulff and Jepessen (2017, p.44)
+
+For the detailed operation of MICE, please refer to Appendix 8.3. 
+
+
+
+
+### Data Modelling
+Clustering is one of the unsupervised machine learning techniques where the machine classifies data (objects) without true class labels. Then the resulting cluster represents a group of objects that share similar characteristics in terms of certain data features (Madhulatha, 2012, p.719). Therefore, objects that belong to different clusters are considered dissimilar. Similarity (dissimilarity) can be measured by various metrics, such as the distance between data points.
+In this section, we will introduce three different clustering algorithms used to cluster countries from various aspects.
+
+
+**COVID-19**
+
+To cluster 79 countries based on COVID-19 data, we selected the following three features: `new_cases_smoothed_per_million`, `new_deaths_smoothed_per_million` and `stringency_index` based on the findings of our user research. Then we computed a Dynamic Time Warping (DTW) distance matrix with these features to measure dissimilarities between countries. 
+
+The DTW distance quantifies how efficiently two time series can be aligned by finding an optimal path between data points, thereby identifying the dissimilarity in shapes between two time series (Seto et al., 2015). Whereas, standard distance metrics such as the Euclidean distance are prone to capturing similarity in shapes when one time series is shifted with outliers. Thus, we used the DTW distance to accurately capture the distinguishability of countries in terms of the spread of coronavirus.
+
+Based on the DTW distance matrix, we used an agglomerative hierarchical clustering algorithm with a complete linkage method. It has an advantage over the k-means clustering algorithm in that it does not require any pre-determination of hyperparameters, such as $k$. Aghabozorgi et al. argue that the pre-determination of k, the number of clusters, is unrealistic and may result in inaccurate clustering results for time-series data (2015, p.28).
+
+Since we did not have true cluster labels, we measured the accuracy of the algorithm by comparing the actual time series shapes of countries for the three features.
+
+
+**Socioeconomic Index**
+
+Socioeconomic index clustering consists of two parts: k-means and hierarchical clustering.
+K-means clustering defines k clusters that minimise total within-cluster error, whereas Hierarchical clustering finds successive clusters using previously established clusters. Govender & Sivakumar (2020) state that both algorithms have several advantages and disadvantages depending on their usage. For instance, k-means clustering is computationally fast and able to handle large datasets whereas hierarchical clustering has a more complex structure with clusters depending on the distance metric. 
+
+To determine optimal $k$, we used Elbow, Silhouette and Gap statistic methods (Shi et al., 2021). For more information please refer to Table #. Therefore, these were deployed with Average Silhouette Width (ASW) to evaluate our k-means clustering algorithms with different $k$’s  (Rousseeuw, 1987). The ASW measures the similarity of each member within its cluster compared to other clusters.
+
+According to Bhandari & Pahwa (2020), Cophenetic and Agglomerative coefficients compare different linkage methods with specified distance metrics. After acquiring distance matrices and linkage methods we further investigated optimal k using the same methods mentioned above. Rendón et al. (2011) argue the value of within-cluster variability indices for unsupervised ML evaluation, thus we compared all models with Dunn Index and attained the final cluster (see Figure 3).
+
+
+**Combining Clusters**
+
+Our final clusters were obtained by clustering on two nominal categorical variables determined above (COVID-19 clusters, and socioeconomic clusters). We intended to group countries that had similar socioeconomic traits and COVID-19 trends. Thus, traditional similarity measures that rely on quantitative data were unsuitable.
+
+Initially, we used a k-modes method with an unweighted dissimilarity matrix. It took on 0 if the COVID-19 and non-COVID-19 cluster labels matched and 1 for unmatched objects.
+Then each object is assigned to the cluster with which it has the smallest distance. However, most countries had the same smallest distance between different clusters yielding random assignments. This was attributable to the lack of information (i.e., two variables) that differentiates countries.
+
+Instead, we relied on methods devised for clustering categorical data, such as Inverse Occurrence Frequency (IOF)  LIN measures. 
+According to Boriah et al. (2008), the IOF dissimilarity measure assigns less similarity to mismatches on more frequent data values, and vice versa. Whereas, the LIN measure assigns higher weights to more frequent matches and less weights to less frequent data values.
+
+To determine the optimal number of clusters for each dissimilarity measure, we found the smallest Akaike Information Criteria (AIC) among 16 k values, which was cross-checked by the elbow method on within-cluster mutability. However, the elbow method was obscure due to the ambiguity of the kink point. For this reason, we determined the optimal number of clusters based on AIC.
+
+The best model we found was the LIN based model based on the evaluation detailed in the result section below.
+
+
+### Evaluation Strategy
+Beyond accuracy, we also evaluated our algorithms in terms of their stability.
+For each of these three algorithms, we randomly removed 10% of all countries (i.e., 8 countries) and clustered the remaining 71 countries using the same algorithm.
+
+Then treating the original clusters of each algorithm as true cluster labels, we compared the original clusters with the new clusters obtained above.
+
+To quantify stability, we computed an adjusted Rand index without the randomly removed countries to compare these two sets of clusters. The adjusted Rand index is a measure of the arrangement between two clustering systems (Santos & Embrechts, 2009, p.175). It ranges from 0 to 1 with 1 being a perfect match, and 0 being unmatched clusters for all members (e.g. countries).
+
+We repeated such a process 100 times for COVID-19 clusters, 1000 times for socioeconomic index clusters and 1000 times for the final combined clusters to quantify the stability of each algorithm.
+
+
+## Part B. Justification
+Intending to achieve the aim of the project, our clustering strategies need to centralise and cluster location in terms of both COVID and socioeconomic aspects. However, it is infeasible to cluster countries using both time series and static data simultaneously.
+
+Therefore, we used the Dynamic Time Warping (DTW) distance to measure the similarity between counties in terms of  COVID-19 trends. Subsequently, we used the Manhattan distance to cluster countries based on socioeconomic index data. Lastly, we used the LIN distance-based hierarchical clustering algorithm with the complete linkage to combine two clustering systems.
+
+By doing so, such strategies enabled us to cluster countries that reflect both time series and static data. Thus, it empowers our users to consider more countries that have similar COVID-19 trends and socioeconomic traits.
+
+Furthermore, we examined the accuracy of our models based on our domain knowledge and within-cluster variability indices, as the accuracy of our model directly impacts the quality of our users’ decision-making. Moreover, we quantify the stability of our models to ensure consistency in case of changes in data in the future.
+
+
+
+# Results
+
+## Findings
+
+### COVID-19 Clusters
+Our COVID-19 clusters accurately reflected the true regional similarities/dissimilarities in COVID-19 trends.
+
+As shown in the hierarchical clustering dendrogram in Figure 2, Australia and New Zealand, for instance, are considered the closest countries. As opposed to these two countries, Spain and Argentina are other closest countries, while being distinguished from Australia and New Zealand.
+
+According to [Our World in Data](https://ourworldindata.org/explorers/coronavirus-data-explorer?zoomToSelection=true&time=2020-03-01..latest&uniformYAxis=0&pickerSort=asc&pickerMetric=location&Metric=Cases+and+deaths&Interval=7-day+rolling+average&Relative+to+Population=true&Color+by+test+positivity=false&country=ESP~AUS~NZL~ARG) (2022), Australia and New Zealand have shown analogous trends in daily new cases and deaths per million since the outbreak of COVID-19, while New Zealand had a shifted peak.
+On the other hand, the COVID trends in Spain and Argentina are aligned perfectly. Yet, there were also distinguishable decreasing trends after the peak for both Spain and Argentina, while Australia and New Zealand had subsequent peaks. 
+
+Furthermore, it appeared that the COVID-19 clusters had reasonable stability. The box plot in Figure 2 displays the distribution of adjusted Rand index values obtained from a 100-time simulation. The average adjusted Rand index was 0.66 with a variance of 0.01. Therefore, we expect that approximately two-thirds of 71 countries will remain in the original cluster in the long term on average.
+
+Hence, the COVID-19 clusters are stable with the concise reflection of COVID-19 trends.
+
+![](Plots/figure_2.png)
+
+### Socioeconomic Index Clusters
+Based on the Elbow, Silhouette and Gap Statistic methods, we derived k = 3, 5 for our k-means clustering model. Henceforth, we evaluated these models with different k’s using ASW. Although the clustering algorithm with k = 3 has a higher ASW, 3 clusters are insufficient to convey in-depth information about 79 countries.
+
+For the hierarchical clustering algorithm, we evaluated the following linkage methods: Ward’s, single, complete and average linkage based on Cophenetic and Agglomerative coefficients with the Euclidean distance. Likewise, the average and Ward’s linkage methods yield a Cophenetic coefficient of 0.73 and the agglomerative coefficient of 0.975, respectively.
+
+We evaluated multiple distance metrics with the linkage methods obtained above: Euclidean, Manhattan and maximum. The Euclidean distance with the average linkage method resulted in higher Agglomerative coefficients compared to the Manhattan, whereas the Manhattan-based hierarchical algorithm with Ward’s linkage produced a significant score of 0.977.
+
+Although hierarchical clustering does not require the pre-determination of k, it is desirable to obtain optimal k (Zambelli, 2016). Thus, we reused Elbow, Silhouette and Gap statistic methods and it suggested that k = 2, 4, and 5 are optimal for our models. Hence, ASW was utilised to detect the most suitable distance metric with three different optimal k values obtained above.
+
+The Manhattan distance was the best distance metric given it yielded higher ASW values for all k’s than the Euclidean distance. Moreover, from Figure 3 it appeared k = 5 was considered the most optimal k with the highest ASW of 0.39.
+
+Overall, we established a Manhattan distance-based hierarchical clustering algorithm with five clusters. We also computed the Dunn index, and concluded that the hierarchical clustering algorithm as our final model (see Figure 3).
+
+Regarding the stability of our model, we found that the average ARI was 0.87 from a 1000-time simulation, thus we derived that it was stable (see Figure 3).
+
+![](Plots/figure_3.png)
+
+### Final Combined Clusters
+We evaluated the final model based on Average Silhouette width, compactness (by Within-cluster mutability (WCM) and separation of clusters (Silhouette value), and domain knowledge of the methodology.
+
+Sulc and Rezankova argue that both measures are reasonably robust, but IOF performs better than the LIN method with a small number of variables. However, the LIN method still yields an above-average performance when there are a small number of variables and it has a strong performance when there are more categories per variable (2019,  p.11).
+
+Our dataset had two categorical variables (COVID-19 and socioeconomic clusters), with many categories (clusters) for each variable, and hence,  the LIN measure was more suitable as it performs well on a small number of variables with more complexity within each variable.
+
+Likewise, the ASW plot in Figure 4 shows that there is a negligible difference in ASW between both models. Yet, the LIN-based model has smaller within-cluster mutability than the IOF-based model. In conjunction, the LIN measure has a more balanced spread of silhouette values even if it has a lower ASW score. This is because,  in particular, we noted the IOF ASW plot, clusters 1, 5, and 7 contained values close to zero. Thus, our final clusters were obtained from the LIN measure.
+
+Furthermore, we obtained an average adjusted rand index of 0.87, indicating that the final clusters are also reasonably stable. Nonetheless, it is notable that we observed several outliers that reduced the average adjusted rand index. These outliers were attributable to the fact that our final model is susceptible to changes in frequency due to the dissimilarity matrix relying on the frequency to assign weights.
+
+![](Plots/figure_4.png)
+
+## Deployment
+[![](Plots/figure_5.png)](https://public.tableau.com/app/profile/christopher.tong2548/viz/COVID-03DEMO/Home?publish=yes)
+
+After the evaluation process, we integrated the final clusters into our dashboard as illustrated in Figure 5. To label countries by their COVID-19 risk, we computed the COVID-19 risk of each country based on the feature importance of the three COVID-19 factors.
+
+With the original COVID-19 cluster labels, we used a random forest model to compute the feature importance scores of the three features. Treating the relative feature importance scores as coefficients, we built a linear equation of the most recent COVID-19 data obtained on May 12, 2022.
+
+Then the resulting COVID-19 risk values were standardised and used to label the overall COVID-19 risk of each country. Similarly, we standardised socioeconomic index data to label countries relying on the standard normal distribution quantiles.
+
+Subsequently, we used Tableau to deploy the final product. Firstly, we integrated the final clusters into data sources in the Tableau service. Then we created worksheets to customise functions (including an interactive world map, selection location indicator, data table, search bar and filters). After we combined these worksheets into a dashboard. Lastly, we published the [dashboard](https://public.tableau.com/app/profile/christopher.tong2548/viz/COVID-03DEMO/Home?publish=yes) using the Tableau service.
+
+
+
+# Discussion and Conclusion
+Overall, our final clusters reflect the actual COVID-19 trends and socioeconomic traits with reasonable accuracy and stability. Hence, our dashboard allows users to understand the COVID-19 trends and socioeconomic traits of each country without having to obtain and compare information, and discover alternative locations when making decisions. Moreover, users can select their preferred universities effectively by including the QS world university subject data. Ultimately, it assists in students’ efficient decision-making process to choosing a university.
+
+Nevertheless, several drawbacks still exist. Firstly, COVID-19 missing data were not perfectly imputed. For instance, approximately 90% of original vaccinations-related data were missing, and hence, we removed them. Furthermore, `new_cases_per_milliion` data feature was also not imputed for certain countries due to multicollinearity.
+Thus, thorough data acquisition and preprocessing will be required to remedy such issues, thereby clustering countries such that they capture more diverse and complicated aspects of countries.
+
+On the other hand, the limitations of our final model stem from the fact that it is difficult to quantify the similarity between unrelated categorical variables. This limitation for clustering categorical data can be remedied when a universal measurement for similarity is developed. 
+
+The dashboard cannot rank the cluster groups based on the users’ preferences. We will create a user preference input function based on the variables and create a scoring system to recommend the personalised cluster to the users. In addition, there exists a limitation in terms of the timeliness of our dashboard. The dashboard is not up-to-date due to the modelling and deployment strategies. Our team will use the extract API to automate data source creation from R to resolve such drawbacks in the future.
+
+
+
+# Student Contributions
+
+Chengyi and Xulin cleaned COVID-19, socioeconomic index and QS university data sets.
+
+After that Sanghyun imputed COVID-19 missing data through Multiple Imputation by Chained Equations (MICE). Then he clustered countries with COVID-19 data using hierarchical clustering algorithms based on the Euclidean, average and DTW distance matrices.
+
+At the same time, Ann also clustered countries with socioeconomic index data using k-means and hierarchical clustering algorithms based on Euclidean and Manhattan distance matrices.
+
+Then Lawrence combined the final COVID-19 and socioeconomic clusters using hierarchical clustering algorithms based on IOF and LIN dissimilarity measures to obtain final combined clusters.
+
+Lastly, Chirstopher conducted user research, deployed the dashboard using Tableau and was in charge of organising group meetings.
+
+
+
+# References
+  
+  A. Liaw and M. Wiener (2002). Classification and Regression by randomForest. R News 2(3), 18--22.
+
+  Aggarwal, C. C., Hinneburg, A., & Keim, D. A. (2001, January). On the surprising behavior of distance metrics in high dimensional space. In International conference on database theory (pp. 420-434). Springer, Berlin, Heidelberg.
+
+  Aghabozorgi, S., Shirkhorshidi, A. S., & Wah, T. Y. (2015). Time-series clustering–a decade review. Information Systems, 53, 16-38.
+
+  Alboukadel Kassambara (2019). ggcorrplot: Visualization of a Correlation Matrix using 'ggplot2'. R package version 0.1.3. https://CRAN.R-project.org/package=ggcorrplot
+  
+  Alboukadel Kassambara (2020). ggpubr: 'ggplot2' Based Publication Ready Plots. R package version 0.4.0.
+https://CRAN.R-project.org/package=ggpubr
+
+  Alboukadel Kassambara and Fabian Mundt (2020). factoextra: Extract and Visualize the Results of Multivariate Data Analyses. R package version 1.0.7. https://CRAN.R-project.org/package=factoextra
+
+  Alboukadel Kassambara and Fabian Mundt (2020). factoextra: Extract and Visualize the Results of Multivariate Data Analyses. R package version 1.0.7. https://CRAN.R-project.org/package=factoextra
+
+  Alexis Sarda-Espinosa (2022). dtwclust: Time Series Clustering Along with Optimizations for the Dynamic Time Warping Distance. R package version 5.5.10. https://CRAN.R-project.org/package=dtwclust
+
+  Andrie de Vries and Brian D. Ripley (2022). ggdendro: Create Dendrograms and Tree Diagrams Using 'ggplot2'. R package version 0.1.23. https://CRAN.R-project.org/package=ggdendro
+
+  Azur, M. J., Stuart, E. A., Frangakis, C., & Leaf, P. J. (2011). Multiple imputation by chained equations: what is it and how does it work?. International journal of methods in psychiatric research, 20(1), 40-49.
+
+  Baptiste Auguie (2017). gridExtra: Miscellaneous Functions for "Grid" Graphics. R package version 2.3. https://CRAN.R-project.org/package=gridExtra
+
+  Bhandari, N., & Pahwa, P. (2020). Evaluating performance of agglomerative clustering for extended NMF. Journal of Statistics and Management Systems, 23(7), 1117-1128.
+
+  Boriah, S., Chandola, V. and Kumar, V. (2008). Similarity Measures for Categorical Data: A Comparative Evaluation. Proceedings of the 2008 SIAM International Conference on Data Mining. doi:10.1137/1.9781611972788.22.
+  
+  C. Sievert. Interactive Web-Based Data Visualization with R, plotly, and shiny. Chapman and Hall/CRC Florida, 2020.
+
+  Caruso, G., Gattone, S., Fortuna, F., & Di Battista, T. (2017). Cluster Analysis as a Decision-Making Tool: A Methodological Review. Advances In Intelligent Systems And Computing, 48-55. https://doi.org/10.1007/978-3-319-60882-2_6
+
+  Claus O. Wilke (2020). cowplot: Streamlined Plot Theme and Plot Annotations for 'ggplot2'. R package version 1.1.1. https://CRAN.R-project.org/package=cowplot
+
+  Elin Waring, Michael Quinn, Amelia McNamara, Eduardo Arino de la Rubia, Hao Zhu and Shannon Ellis (2022). skimr: Compact and Flexible Summaries of Data. R package version 2.1.4. https://CRAN.R-project.org/package=skimr
+
+  Erich Neuwirth (2022). RColorBrewer: ColorBrewer Palettes. R package version 1.1-3. https://CRAN.R-project.org/package=RColorBrewer
+
+  Govender, P., & Sivakumar, V. (2020). Application of k-means and hierarchical clustering techniques for analysis of air pollution: A review (1980–2019). Atmospheric Pollution Research, 11(1), 40-56.
+
+  Goyal, P. (2020). RPubs - Hierarchical Clustering, https://rpubs.com/pg2000in/HierarchicalClustering
+
+  Guy Brock, Vasyl Pihur, Susmita Datta, Somnath Datta (2008). clValid: An R Package for Cluster Validation. Journal of Statistical Software, 25(4), 1-22. URL https://www.jstatsoft.org/v25/i04/
+
+  Hadley Wickham (2007). Reshaping Data with the reshape Package. Journal of Statistical Software, 21(12), 1-20. URL http://www.jstatsoft.org/v21/i12/.
+
+  Hadley Wickham, Jim Hester, Winston Chang and Jennifer Bryan (2021). devtools: Tools to Make Developing R Packages Easier. R package version 2.4.3. https://CRAN.R-project.org/package=devtools
+
+  Hadley Wickham, Romain François, Lionel Henry and Kirill Müller (2022). dplyr: A Grammar of Data Manipulation. R package version 1.0.9. https://CRAN.R-project.org/package=dplyr
+
+  Harris, C.R., Millman, K.J., van der Walt, S.J. et al. Array programming with NumPy. Nature 585, 357–362 (2020). DOI: 10.1038/s41586-020-2649-2.
+
+  Jakobsen, J. C., Gluud, C., Wetterslev, J., & Winkel, P. (2017). When and how should multiple imputation be used for handling missing data in randomised clinical trials–a practical guide with flowcharts. BMC medical research methodology, 17(1), 1-10.
+
+  Kevin Ushey, JJ Allaire and Yuan Tang (2022). reticulate: Interface to 'Python'. R package version 1.25. https://CRAN.R-project.org/package=reticulate
+
+  KModes Clustering Algorithm for Categorical data 2021, Analytics Vidhya,, <https://www.analyticsvidhya.com/blog/2021/06/kmodes-clustering-algorithm-for-categorical-data/#:~:text=KModes%20clustering%20is%20one%20of>.
+
+  Korkmaz S, Goksuluk D, Zararsiz G. MVN: An R Package for Assessing Multivariate Normality. The R Journal. 2014 6(2):151-162.
+
+  Lin, D. (1998.). An Information-Theoretic Definition of Similarity. [online] Available at: https://www.cse.iitb.ac.in/~cs626-449/Papers/WordSimilarity/3.pdf ].
+
+  Madhulatha, T. S. (2012). An overview on clustering methods. arXiv preprint arXiv:1205.1117.
+
+  Maechler, M., Rousseeuw, P., Struyf, A., Hubert, M., Hornik, K.(2022). cluster: Cluster Analysis Basics and Extensions. R package version 2.1.3.
+
+  Malika Charrad, Nadia Ghazzali, Veronique Boiteau, Azam Niknafs (2014). NbClust: An R Package for Determining the Relevant Number of Clusters in a Data Set. Journal of Statistical Software, 61(6), 1-36. URL http://www.jstatsoft.org/v61/i06/.
+
+  Marie Delacre and Olivier Klein (2019). Routliers: Robust Outliers Detection. R package version 0.0.0.3. https://CRAN.R-project.org/package=Routliers
+
+  Max Kuhn (2022). caret: Classification and Regression Training. R package version 6.0-92. https://CRAN.R-project.org/package=caret
+
+  Nicholas Tierney, Di Cook, Miles McBain and Colin Fay (2021). naniar: Data Structures, Summaries, and Visualisations for Missing Data. R package version 0.6.1. https://CRAN.R-project.org/package=naniar
+
+  Numbeo, (2022), NUMBEO, https://www.numbeo.com/cost-of-living/cpi_explained.jsp
+
+  Numbeo, (2022), NUMBEO, https://www.numbeo.com/crime/indices_explained.jsp
+
+  Our World in Data (2022), COVID-19 Data Explorer, https://ourworldindata.org/explorers/coronavirus-data-explorer?zoomToSelection=true&time=2020-03-01..latest&uniformYAxis=0&pickerSort=asc&pickerMetric=location&Metric=Cases+and+deaths&Interval=7-day+rolling+average&Relative+to+Population=true&Color+by+test+positivity=false&country=ESP~AUS~NZL~ARG
+
+  Our World in Data (2022), Data on COVID-19 (coronavirus) by Our World in Data, https://github.com/owid/covid-19-data/tree/master/public/data
+
+  Pablo Montero, José A. Vilar (2014). TSclust: An R Package for Time Series Clustering. Journal of Statistical Software, 62(1), 1-43. URL http://www.jstatsoft.org/v62/i01/.
+pandas - Python Data Analysis Library. (2022). Retrieved 30 May 2022, from https://pandas.pydata.org/
+
+  Philipp Probst (2020). varImp: RF Variable Importance for Arbitrary Measures. R package version 0.4. https://CRAN.R-project.org/package=varImp
+
+  Phillips-Wren, G., & Adya, M. (2020). Decision making under stress: the role of information overload, time pressure, complexity, and uncertainty. 
+  
+  Journal Of Decision Systems, 29(sup1), 213-225. https://doi.org/10.1080/12460125.2020.1768680
+
+  R Core Team (2021). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/.
+
+  Raivo Kolde (2019). pheatmap: Pretty Heatmaps. R package version 1.0.12. https://CRAN.R-project.org/package=pheatmap
+
+  re — Regular expression operations — Python 3.10.4 documentation. (2022). Retrieved 30 May 2022, from https://docs.python.org/3/library/re.html
+
+  Rendón, E., Abundez, I., Arizmendi, A., & Quiroz, E. M. (2011). Internal versus external cluster validation indexes. International Journal of computers and communications, 5(1), 27-34.
+
+  Ron Ammar (2019). randomcoloR: Generate Attractive Random Colors. R package version 1.1.0.1. https://CRAN.R-project.org/package=randomcoloR
+
+  Rousseeuw, P. J. (1987). Silhouettes: a graphical aid to the interpretation and validation of cluster analysis. Journal of computational and applied mathematics, 20, 53-65.
+
+  Sam Firke (2021). janitor: Simple Tools for Examining and Cleaning Dirty Data. R package version 2.1.0. https://CRAN.R-project.org/package=janitor
+
+  Santos, J. M., & Embrechts, M. (2009, September). On the use of the adjusted rand index as a metric for evaluating supervised classification. In International conference on artificial neural networks (pp. 175-184). Springer, Berlin, Heidelberg.
+
+  Saraçli, S., Doğan, N., & Doğan, İ. (2013). Comparison of hierarchical cluster analysis methods by cophenetic correlation. Journal of inequalities and Applications, 2013(1), 1-8.
+
+  Scrucca L., Fop M., Murphy T. B. and Raftery A. E. (2016) mclust 5: clustering, classification and density estimation using Gaussian finite mixture models The R Journal 8/1, pp. 289-317
+
+  Scrucca L., Fop M., Murphy T. B. and Raftery A. E. (2016) mclust 5: clustering, classification and density estimation using Gaussian finite mixture models The R Journal 8/1, pp. 289-317
+
+  Seto, S., Zhang, W., & Zhou, Y. (2015, December). Multivariate time series classification using dynamic time warping template selection for human activity recognition. In 2015 IEEE symposium series on computational intelligence (pp. 1399-1406). IEEE.
+
+  Sharma, S., & Batra, N. (2019, February). Comparative study of single linkage, complete linkage, and ward method of agglomerative clustering. In 2019 International Conference on Machine Learning, Big Data, Cloud and Parallel Computing (COMITCon) (pp. 568-573). IEEE.
+
+  Shi, C., Wei, B., Wei, S., Wang, W., Liu, H., & Liu, J. (2021). A quantitative discriminant method of elbow point for the optimal number of clusters in clustering algorithm. EURASIP Journal on Wireless Communications and Networking, 2021(1), 1-16.
+Soetewey, A. (2020). The complete guide to clustering analysis: k-means and hierarchical clustering by hand and in R, https://statsandr.com/blog/clustering-analysis-k-means-and-hierarchical-clustering-by-hand-and-in-r/
+
+  Stef van Buuren, Karin Groothuis-Oudshoorn (2011). mice: Multivariate Imputation by Chained Equations in R. Journal of Statistical Software, 45(3), 1-67. DOI 10.18637/jss.v045.i03.
+Sulc Z, Cibulkova J, Rezankova H (2021). _nomclust: Hierarchical Cluster Analysis of Nominal Data_. R package version 2.5.0, https://CRAN.R-project.org/package=nomclust.
+
+  Šulc, Z & Řezanková, H (2019), ‘Comparison of Similarity Measures for Categorical Data in Hierarchical Clustering’, Journal of Classification, vol. 36, no. 1, pp. 58–72.
+
+  Šulc, Z., Cibulková, J., Procházka, J. and Řezanková, H. (2018). Internal evaluation criteria for categorical data in hierarchical clustering. Advances in Methodology and Statistics, [online] 15(2). doi:10.51936/lxut1974.
+
+  Sulc, Zdenek & Řezanková, Hana. (2014). Evaluation of Selected Approaches to Clustering Categorical Variables. STATISTICS IN TRANSITION new series. 15. 591-610.
+
+  Sulc, Zdenek. (2015). Application of Goodall's and Lin's similarity measures in hierarchical clustering. Researchgate
+
+  Tableau. (2022). Retrieved 4 May 2022, from https://www.tableau.com/.
+
+  Taiyun Wei and Viliam Simko (2021). R package 'corrplot': Visualization of a Correlation Matrix (Version 0.92). Available from https://github.com/taiyun/corrplot
+
+  Tierney N (2017). “visdat: Visualising Whole Data Frames.” _JOSS_, *2*(16), 355. doi: 10.21105/joss.00355 (URL: https://doi.org/10.21105/joss.00355)
+
+  Tim Hesterberg (2015). resample: Resampling Functions. R package version 0.4. https://CRAN.R-project.org/package=resample
+
+  Van Rossum, G. (2020). The Python Library Reference, release 3.8.2. Python Software Foundation.
+
+  Van Rossum, G. (2020). The Python Library Reference, release 3.8.2. Python Software Foundation.
+
+  Wickham et al., (2019). Welcome to the tidyverse. Journal of Open Source Software, 4(43), 1686, https://doi.org/10.21105/joss.01686
+
+  Wu, L., Zheng, J., & Zhang, L. (2022). Empirical Research on Influence Mechanism of COVID-19 on University Students’ Decision to Study Abroad. Advances In Artificial Systems For Medicine And Education V, 255-267. https://doi.org/10.1007/978-3-030-92537-6_24
+
+  Wulff, J. N., & Jeppesen, L. E. (2017). Multiple imputation by chained equations in praxis: guidelines and review. Electronic Journal of Business Research Methods, 15(1), 41-56.
+
+  Yihui Xie (2014) knitr: A Comprehensive Tool for Reproducible Research in R. In Victoria Stodden, Friedrich Leisch and Roger D. Peng, editors, Implementing Reproducible Computational Research. Chapman and Hall/CRC. ISBN 978-1466561595
+
+  Yihui Xie (2015) Dynamic Documents with R and knitr. 2nd edition. Chapman and Hall/CRC. ISBN 978-1498716963
+
+  Yihui Xie (2022). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.39.
+
+  Yihui Xie, Joe Cheng and Xianying Tan (2022). DT: A Wrapper of the JavaScript Library 'DataTables'. R package version 0.23. https://CRAN.R-project.org/package=DT
+
+  Zambelli, A. E. (2016). A data-driven approach to estimating the number of clusters in hierarchical clustering. F1000Research, 5.
+
+  Zuccarelli, E. (2021). Performance Metrics in Machine Learning — Part 3: Clustering, https://towardsdatascience.com/performance-metrics-in-machine-learning-part-3-clustering-d69550662dc6
+
+
+# Apendix
+
+## Terminology
+
+| Terminology | Description |
+| - | ----------- |
+| Cophenetic Coefficient | Defines goodness of fit of clusters, and conveys how faithfully tree (dendrogram) represent dissimilarity among observations. |
+| Agglomerative Coefficient | Defines the strength of clustering structure, dividing dissimilarity of the first cluster it joins by dissimilarity of the final merger. |
+| Average Silhouette Width | It represents how similar each point is to its cluster compared to other clusters. |
+| Dunn Index | One of the internal cluster evaluations, and defines how clusters are compact with small variance.  |
+| Elbow Method | Finds optimal k where within-sum of squared distance starts to decrease abruptly. |
+| Silhouette Method | Finds k where the Silhouette score is maximised. The silhouette score of each data point is measured by how much a point is similar to its own cluster compared to neighbouring clusters. It ranges from -1 to 1. |
+| Gap statistics | Finds k that maximises gap statistic, where gap statistic is the deviation of the observed value from the expected value under the NULL hypothesis. This means it expects data points to be in random uniform distribution. |
+| Average Linkage | It defines the distance between two clusters to be the average distance between the first cluster and the second cluster.  |
+| Ward Linkage | It defines the distance between two clusters by computing the increase in the Error Sum of Squares (ESS) after merging two clusters. |
+| Complete Linkage | It determines the distance between clusters by the farthest distance between any two data points in the distance matrix (Sharma and Batra, 2019, p.570). |
+| Single Linkage | It looks at the closest data points to find similar clusters.  |
+
+
+
+## Metadata
+The COVID-19 data set includes a wide variety of COVID-19 factors obtained from more than 200 countries and regions since February 24, 2020. For more information, please see [here](https://github.com/owid/covid-19-data/tree/master/public/data).
+
+The cost of living index is a relative indicator that quantifies differences in the price of goods and services between countries (Numbeo, 2022). Goods and services include necessities required to sustain a basic standard of living, such as housing, groceries, healthcare or taxes.
+It varies from 0 to 100 with 100 being equally expensive as New York city’s costs of living, and 0 being 100% less expensive than the cost of living in New York.
+
+The rent index is another relative indicator that estimates the cost of renting apartments in a country compared to New York (Numbeo, 2022).
+
+As with the rent index, the groceries index measures the relative prices of food compared to New York (Numbeo, 2022).
+
+The restaurants index measures the relative prices of meals and beverages in restaurants compared to that of New York (Numbeo, 2022).
+
+The crime index is an overall measure that estimates the level of crime in a certain country. According to Numbeo (2022), crime levels lower than 20 are considered significantly low, levels between 20 and 40 are considered low, and levels between 40 and 60 represent a moderate level of crime. 
+By contrast, crime levels between 60 and 80, and levels between 80 and 100 represent a high and significantly high level of crime, respectively.
+
+The safety index is an overall estimated level of safety in a given country with 100 being significantly safe and 0 being significantly unsafe (Numbeo, 2022).
+
+
+## Multiple Imputation by Chained Equations (MICE)
+![](Plots/mice_opreation.png)
+
+## Socioeconomic Index Clustering Process
+![](Plots/socioeconomics_flowchart.png)
+
+
+## Final Dataset Structure
+
+
+```{r}
+library(rmarkdown)
+paged_table(read.csv("final_dataset.csv"))
+```
+
+## Code
+```{r, results = "hide"}
+library(reticulate)
+python_path = py_config()$python
+use_python(python_path)
+
+library(tidyverse)
+library(skimr)
+library(reshape2)
+library(DT)
+library(visdat)
+library(MVN)
+library(mice)
+library(plotly)
+library(ggcorrplot)
+library(randomcoloR)
+library(pheatmap)
+library(TSclust)
+library(dtwclust)
+library(ggdendro)
+library(factoextra)
+library(mclust)
+library(randomForest)
+library(dplyr)
+library(naniar)
+library(knitr)
+library(devtools)
+library(janitor)
+library(caret)
+library(sjmisc)
+library(Routliers)
+library(resample)
+library(corrplot)
+library(cluster)
+library(stats)
+library(factoextra)
+library(NbClust)
+library(dendextend)
+library(RColorBrewer)
+library(randomForest)
+library(varImp)
+library(cowplot)
+library(gridExtra)
+library(mclust)
+library(clValid)
+library(klaR)
+library(nomclust)
+library(ggpubr)
+```
+
+### Data Preprocessing
+```{python, cache = TRUE, results = "hide"}
+import pandas as pd
+import numpy as np
+import datetime
+import csv
+
+# read the dataset
+qs = pd.read_csv("qs.csv")
+covid = pd.read_csv("owid-covid-data.csv")
+qs_country = list(qs["Country"].unique())
+covid_country = list(covid["location"].unique())
+
+# find the different country name in qs and covid dataset
+z = [x for x in qs_country if x in covid_country]
+diff = [y for y in (qs_country + covid_country) if y not in z]
+
+### change the name in qs dataset
+qs_location_diff = ['Hong Kong SAR', 'Syrian Arab Republic', 'Palestinian Territory, Occupied', 'Czech Republic', 'Iran, Islamic Republic of', 'China (Mainland)', 'Macau SAR']
+covid_location_diff = ['Hong Kong', 'Syria', 'Palestine', 'Czechia', 'Iran', 'China', 'China']
+qs["Country"] = qs["Country"].replace(qs_location_diff, covid_location_diff)
+
+# read the dataset
+cost2022 = pd.read_csv("Country Cost of Living Index 2022.csv")
+safe2022 = pd.read_csv("Country Safety Index 2022.csv")
+crime2022 = pd.read_csv("Country Crime Index 2022.csv")
+
+index1 = pd.merge(cost2022[["Country", "Cost of Living Index", "Rent Index", "Groceries Index","Restaurant Price Index"]],
+                  crime2022[["Country", "Crime Index"]], on = "Country")
+index1["year"] = 2022
+index1 = pd.merge(index1, safe2022[["Country", "Safety Index"]], on = "Country")
+index1 = pd.merge(index1, qs[["Country"]].drop_duplicates(keep = 'first'), on = "Country")
+
+index1.columns = ["Location", "Cost of Living Index", "Rent Index", "Groceries Index", "Restaurant Price Index", "Crime Index", "year", "Safety Index"]
+
+# create the dataset for index cluster
+index1.to_csv("index_cleaned.csv", index = False) 
+
+# delete the country with lots of missing data, more than 80%
+country_list = list(qs["Country"].unique())
+country_list.remove("Puerto Rico")
+country_list.remove("Brunei")
+
+# create the dataset with the country in qs, and make this version to do covid cluster
+covid_cleaned = covid[covid["location"].isin(country_list)]
+
+covid_cleaned.to_csv("covid_cleaned.csv",index = False)
+```
+
+### COVID-19 Clustering
+#### Missing Data Imputation
+```{r, cache = TRUE}
+# load the cleaned 
+covid_df = read.csv("covid_cleaned.csv")
+covid_df$date = as.Date(covid_df$date)
+unique(covid_df$location) %>% matrix(nrow = 10, byrow = TRUE) %>% kable(caption = "List of Countries for Clustering")
+```
+
+```{r, cache = TRUE}
+# use the 'pandemic' data: WHO officially declared COVID-19 a pandemic on March 11, 2020
+covid_df1 = covid_df %>% filter(date >= "2020-03-11")
+
+# replace vaccinations-related missing data with 0 that appear at the beginning of the pandemic when the vaccines didn't even exist
+covid_df1s = split.data.frame(covid_df1, covid_df1$location)
+for (i in 1:length(covid_df1s)) {
+  vaccine_ind = which(grepl("vaccin", colnames(covid_df1s[[i]])))
+  non_na_vaccine = which(!is.na(covid_df1s[[i]][vaccine_ind]))
+  first_non_na = non_na_vaccine[1]
+  covid_df1s[[i]][1:(first_non_na-1), vaccine_ind] = covid_df1s[[i]][1:(first_non_na-1), vaccine_ind] %>% mutate_all(~replace(., is.na(.), 0))
+}
+
+# merge the country data sets
+covid_df1 = unsplit(covid_df1s, covid_df1$location)
+
+# the proportion of missing data for each variable
+na_perc = melt(colMeans(is.na(covid_df1))) %>% round(3) %>% arrange(desc(value))
+datatable(na_perc)
+
+# remove variables whose proportion of missing data is greater than 0.5
+high_na_perc = na_perc %>% filter(value > 0.5)
+na_vars = rownames(high_na_perc)
+```
+
+```{r}
+# drop variables where more than 50% of values are missing 
+covid_df1 = covid_df1 %>% dplyr::select(-na_vars)
+vis_miss(covid_df1, warn_large_data = FALSE) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+covid_df1s = split.data.frame(covid_df1, covid_df1$location)
+
+# Armenia missing data
+vis_miss(covid_df1s[[2]]) +
+  labs(title = covid_df1s[[2]]$location) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+
+# since the whole stringency_index column is missing, exclude Armenia from the analysis
+covid_df1 = covid_df1 %>% filter(location != "Armenia")
+```
+
+```{r}
+# the proportion of missing data in each column for each country data
+na_per_country = covid_df1 %>% 
+  group_by(location) %>% 
+  summarise_all(funs(round(mean(is.na(.)), 3)))
+na_vars2 = na_per_country[, -1] %>% select_if(~any(. > 0.5)) %>% colnames()
+```
+
+```{r}
+# further remove variables if their proportion of missing data is greater than 0.5 for any country
+covid_df2 = covid_df1 %>% dplyr::select(-na_vars2)
+vis_miss(covid_df2, warn_large_data = FALSE) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+```
+
+```{r}
+# check multicollinearity
+num_vars = which(sapply(covid_df2, is.numeric))
+covid_num_df = covid_df2[, num_vars]
+cor_mat = cor(covid_num_df, use = "complete.obs")
+
+p = ggcorrplot(cor_mat, hc.order = TRUE, type = "lower", outline.col = "white") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, size = 6, vjust = 1, hjust = 1),
+        axis.text.y = element_text(size = 6))
+ggplotly(p)
+
+# remove collinear variables, while keeping smoothed data
+collinear_vars = c("new_cases", "new_cases_per_million", "new_deaths", "new_deaths_per_million", "total_cases_per_million",
+                   "new_people_vaccinated_smoothed_per_hundred", "new_people_vaccinated_smoothed", "new_vaccinations_smoothed",
+                   "total_deaths", "total_cases")
+covid_df2 = covid_df2 %>% dplyr::select(-collinear_vars)
+```
+
+```{r, cache = TRUE, results = "hide"}
+# missing data imputation
+covid_df2s = split.data.frame(covid_df2, covid_df2$location)
+n = length(covid_df2s)
+covid_imputed_dfs = setNames(replicate(n, data.frame()), unique(covid_df2$location))
+
+# for each country data set, impute missing data through Multiplie Imputation by Chained Equations
+for (i in 1:length(covid_df2s)) {
+  imp = mice(covid_df2s[[i]], m = 5, method = "rf", maxit = 5, seed = 3888, rfPackage = "randomForest")
+  covid_imputed_dfs[[i]] = complete(imp, 1)
+}
+
+# merge imputed country data sets
+covid_imputed_df = unsplit(covid_imputed_dfs, covid_df2$location)
+```
+
+```{r}
+# imputed missing data visualisation
+vis_miss(covid_imputed_df, warn_large_data = FALSE) +
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+
+# select unique dates where 'new_cases_smoothed_per_million' are missing for any country
+na_cases_ind = which(is.na(covid_imputed_df %>% dplyr::select(new_cases_smoothed_per_million)))
+na_cases_date = covid_imputed_df[na_cases_ind, ] %>% dplyr::select(date)
+na_cases_dates = unique(na_cases_date)
+
+# select unique dates where 'new_deaths_smoothed_per_million' are missing for any country
+na_deaths_ind = which(is.na(covid_imputed_df %>% dplyr::select(new_deaths_smoothed_per_million)))
+na_deaths_date = covid_imputed_df[na_deaths_ind, ] %>% dplyr::select(date)
+na_deaths_dates = unique(na_deaths_date)
+
+# drop the union of those two sets of dates for every country
+dates_to_drop = union(na_cases_dates, na_deaths_dates) %>% pull()
+covid_imputed_df1 = covid_imputed_df %>% filter(!date %in% dates_to_drop)
+vis_miss(covid_imputed_df1, warn_large_data = FALSE) + 
+  theme(axis.text.x = element_text(size = 6, angle = 90))
+```
+
+```{r}
+# original COVID-19 data time series plots
+nColor =  length(unique(covid_df2$location))
+myColor = randomcoloR::distinctColorPalette(k = nColor)
+
+new_cases_p = covid_df2 %>% ggplot() +
+    aes(x = date, y = new_cases_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw() +
+    scale_colour_manual(values = myColor) +
+    ylab("New Cases Smoothed per Million") +
+    labs(color = "Country/Region", title = "Original New Cases Smoothed per Million")
+
+new_deaths_p = covid_df2 %>% ggplot() +
+    aes(x = date, y = new_deaths_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw() +
+    scale_colour_manual(values = myColor) +
+    ylab("New Deaths per Million") +
+    labs(color = "Country/Region", title = "Original New Deaths per Million")
+
+str_ind_p = covid_df2 %>% ggplot() +
+    aes(x = date, y = stringency_index, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw() +
+    scale_colour_manual(values = myColor) +
+    ylab("Stringency Index") +
+    labs(color = "Country/Region", title = "Original Stringency Index")
+```
+
+```{r}
+# imputed COVID-19 data time series plots
+imputed_new_cases_p = covid_imputed_df1 %>% ggplot() +
+    aes(x = date, y = new_cases_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw()  +
+    scale_colour_manual(values = myColor) +
+    ylab("New Cases Smoothed per Million") +
+    labs(color = "Country/Region", title = "Imputed New Cases Smoothed per Million")
+
+imputed_new_deaths_p = covid_imputed_df1 %>% ggplot() +
+    aes(x = date, y = new_deaths_smoothed_per_million, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw()  +
+    scale_colour_manual(values = myColor) +
+    ylab("New Deaths Smoothed per Million") +
+    labs(color = "Country/Region", title = "Imputed New Deaths Smoothed per Million")
+
+imputed_str_ind_p = covid_imputed_df1 %>% ggplot() +
+    aes(x = date, y = stringency_index, group = location, color = location) +
+    geom_line(lwd = 0.5) +
+    theme_bw()  +
+    scale_colour_manual(values = myColor) +
+    ylab("Stringency Index") +
+    labs(color = "Country/Region", title = "Imputed Stringency Index")
+```
+
+```{r}
+ggplotly(new_cases_p)
+ggplotly(imputed_new_cases_p)
+
+ggplotly(new_deaths_p)
+ggplotly(imputed_new_deaths_p)
+
+ggplotly(str_ind_p)
+ggplotly(imputed_str_ind_p)
+```
+
+
+#### Data Scaling
+```{r}
+# robust scaling to normalise data so data features can have same scales
+num_vars = which(sapply(covid_imputed_df1, is.numeric))
+covid_imputed_num_df = covid_imputed_df1[, num_vars]
+covid_imputed_cat_df = covid_imputed_df1[, -num_vars]
+robust_scalar = function(x){
+  (x- median(x)) / (quantile(x, probs = 0.75) - quantile(x, probs = 0.25))
+}
+
+norm_covid_imputed_df = apply(covid_imputed_num_df, 2, robust_scalar) %>% data.frame()
+
+melt(norm_covid_imputed_df) %>% ggplot() +
+  aes(x = variable, y = value) + 
+  geom_boxplot(outlier.shape = 20, outlier.size = 0.5, outlier.color = "red") +
+  coord_flip() +
+  theme_bw()
+
+melt(norm_covid_imputed_df) %>% ggplot() +
+  aes(x = value) + 
+  geom_histogram() +
+  facet_wrap(~ variable) +
+  theme_bw()
+
+# normalised imputed data set
+norm_covid_imputed_df = cbind(covid_imputed_cat_df, norm_covid_imputed_df)
+final_vars = c("location", "date", "new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")
+final_norm_imputed_covid_df = norm_covid_imputed_df[, final_vars]
+```
+
+#### Euclidean Distance
+```{r}
+# find the earliest and latest date of each country
+dates = final_norm_imputed_covid_df %>% group_by(location) %>% summarize(min_date = min(date),
+                                                                         max_date = max(date))
+# the starting date is the latest date among the 79 earliest dates of all countries
+max_min_date = max(dates$min_date)
+
+# the final date is the earliest date among the 79 latest dates of all countries
+min_max_date = min(dates$max_date)
+
+# match the starting and final dates for every country
+final_norm_imputed_covid_df2 = final_norm_imputed_covid_df %>% filter(date >= max_min_date & date <= min_max_date)
+df_list = split.data.frame(final_norm_imputed_covid_df2[, c("date","new_cases_smoothed_per_million", 
+                                                            "new_deaths_smoothed_per_million", "stringency_index")],
+                           final_norm_imputed_covid_df2$location)
+```
+
+```{r}
+# the Euclidean distance
+l_p_distance = function(x, y, p){
+    distance = sum((x - y)^p, na.rm = TRUE)^(1/p)
+    return(distance)
+}
+```
+
+```{r}
+# compute a distance matrix
+p = 2
+n = length(unique(final_norm_imputed_covid_df2$location))
+d_mat_eucl = matrix(0, n, n)
+dateindex = df_list[[1]]$date
+
+for (i in 1:n ){
+    for (j in 1:n){
+          index_i = match(df_list[[i]]$date, dateindex)
+          index_j = match(df_list[[j]]$date, dateindex)
+          ts_i = df_list[[i]][index_i, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          ts_j = df_list[[j]][index_j, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          d_mat_eucl[i,j] = l_p_distance(ts_i, ts_j, p)
+    }
+}
+
+rownames(d_mat_eucl) = colnames(d_mat_eucl) = unique(final_norm_imputed_covid_df2$location)
+d_mat_eucl[!is.finite(d_mat_eucl)] = 0
+```
+
+```{r}
+# dendrogram and heatmap
+matrix_dist = as.dist(d_mat_eucl)
+hclust_res1 = hclust(matrix_dist, method = "ward.D")
+
+plot(hclust_res1, cex = 0.6, main = "Euclidean Distance-based Hierarchical Clustering Dendrogram")
+pheatmap(d_mat_eucl, cluster_cols = T, cluster_rows = T,
+         main = "L^2 distance", clustering_method = "ward.D",
+         fontsize_row = 4, fontsize_col = 4)
+
+cutree_eucl = cutree(hclust_res1, k = 5)
+```
+
+#### Average Distance
+```{r}
+# the average distance
+avg_distance = function(x, y, n) {
+  distance = (sum((x - y)^2, na.rm = TRUE) / n)^(1/2)
+  return(distance)
+}
+```
+
+```{r}
+# compute a distance matrix
+d_mat_avg = matrix(0, n, n)
+dateindex = df_list[[1]]$date
+
+for (i in 1:n ){
+    for (j in 1:n){
+          index_i = match(df_list[[i]]$date, dateindex)
+          index_j = match(df_list[[j]]$date, dateindex)
+          ts_i = df_list[[i]][index_i, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          ts_j = df_list[[j]][index_j, c("new_cases_smoothed_per_million", "new_deaths_smoothed_per_million", "stringency_index")]
+          d_mat_avg[i,j] = avg_distance(ts_i, ts_j, ncol(ts_i))
+    }
+}
+
+rownames(d_mat_avg) = colnames(d_mat_avg) = unique(final_norm_imputed_covid_df2$location)
+d_mat_avg[!is.finite(d_mat_avg)] = 0
+```
+
+```{r}
+# dendrogram and heatmap
+matrix_dist = as.dist(d_mat_avg)
+hclust_res2 = hclust(matrix_dist, method = "ward.D")  
+
+plot(hclust_res2, cex = 0.6, main = "Average Distance-based Hierarchical Clustering Dendrogram")
+pheatmap(d_mat_avg, cluster_cols = T, cluster_rows = T,
+         main = "Average distance", clustering_method = "ward.D",
+         fontsize_row = 4, fontsize_col = 4)
+
+cutree_avg = cutree(hclust_res2, k = 5)
+```
+
+#### Dynamic Time Warping Distance
+```{r}
+# obtain a list of 79 country data sets
+dtw_covid_df_list = split.data.frame(final_norm_imputed_covid_df2[, c("new_cases_smoothed_per_million",
+                                                                      "new_deaths_smoothed_per_million",
+                                                                      "stringency_index")], final_norm_imputed_covid_df2$location)
+dtw_covid_mat_list = lapply(dtw_covid_df_list, as.matrix)
+
+# select final COVID-19 data features obtained from the user research
+dtw_covid_df = final_norm_imputed_covid_df2 %>% dplyr::select(date, location, new_cases_smoothed_per_million, new_deaths_smoothed_per_million, stringency_index)
+```
+
+```{r, cache = TRUE, results = "hide"}
+# DTW distance-based hierarchical clustering with the complete linkage
+Nclust = 6
+dtw_model = tsclust(series = dtw_covid_mat_list, 
+                    type = "hierarchical", 
+                    k = Nclust, 
+                    distance = "dtw",
+                    control = hierarchical_control(method = "complete"),
+                    preproc = NULL,
+                    trace = TRUE)
+
+dtw_data = dendro_data(dtw_model, type = "rectangle")
+labels_order = dtw_data$labels$label
+dtw_result = data.frame(label = names(dtw_covid_mat_list),
+                        cluster = factor(cutree(dtw_model, k = Nclust)))
+dtw_data[["labels"]] = merge(dtw_data[["labels"]], dtw_result, by = "label")
+dtw_result = full_join(dtw_result, dtw_data$labels, by = c("label", "cluster")) %>% arrange(x)
+```
+
+```{r, cache = TRUE}
+# dendrogram
+cluster_box = aggregate(x ~ cluster, label(dtw_data), range)
+cluster_box = data.frame(cluster_box$cluster,cluster_box$x)
+cluster_threshold = mean(dtw_model$height[length(dtw_model$height) - ((Nclust-2):(Nclust-1))])
+
+numColors = length(levels(dtw_result$cluster)) # number of colors = number of clusters
+getColors = scales::hue_pal() # create a function that takes a number and returns a qualitative palette of that length
+myPalette = getColors(numColors)
+names(myPalette) = levels(dtw_result$cluster) # give every color an appropriate name
+n1 = nrow(dtw_result) # number of countries
+
+covid_dtw_dendro = ggplot() + 
+  geom_rect(data = cluster_box, 
+            aes(xmin = X1 - 0.3, xmax = X2 + 0.3, ymin = 0, ymax = cluster_threshold, color = cluster_box.cluster), 
+            fill = NA) +
+  geom_segment(data = segment(dtw_data), aes(x = x, y = y, xend = xend, yend = yend)) +
+  scale_y_continuous("Distance") + 
+  scale_x_continuous("", breaks = 1:n1, labels = labels_order) + 
+  guides(color = "none", fill = "none") +
+  labs(title = "DTW Distance-based Hierarchical Clustering Dendrogram",
+       subtitle = "Complete Linkage") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette[dtw_result$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+covid_dtw_dendro
+```
+
+```{r, cache = TRUE, results = "hide"}
+# DTW distance-based hierarchical clustering with the average linkage
+Nclust = 6
+dtw_model2 = tsclust(series = dtw_covid_mat_list,
+                    type = "hierarchical",
+                    k = Nclust,
+                    distance = "dtw",
+                    control = hierarchical_control(method = "average"),
+                    preproc = NULL,
+                    trace = TRUE)
+
+dtw_data2 = dendro_data(dtw_model2, type = "rectangle")
+labels_order2 = dtw_data2$labels$label
+dtw_result2 = data.frame(label = names(dtw_covid_mat_list),
+                        cluster = factor(cutree(dtw_model2, k = Nclust)))
+dtw_data2[["labels"]] = merge(dtw_data2[["labels"]], dtw_result2, by = "label")
+dtw_result2 = full_join(dtw_result2, dtw_data2$labels, by = c("label", "cluster")) %>% arrange(x)
+```
+
+```{r, cache = TRUE}
+# dendrogram
+cluster_box2 = aggregate(x ~ cluster, label(dtw_data2), range)
+cluster_box2 = data.frame(cluster_box2$cluster, cluster_box2$x)
+cluster_threshold2 = mean(dtw_model2$height[length(dtw_model2$height) - ((Nclust-2):(Nclust-1))])
+
+numColors2 = length(levels(dtw_result2$cluster)) # number of colors = number of clusters
+getColors2 = scales::hue_pal() # Create a function that takes a number and returns a qualitative palette of that length
+myPalette2 = getColors(numColors2)
+names(myPalette2) = levels(dtw_result2$cluster) # Give every color an appropriate name
+n2 = nrow (dtw_result2) # number of countries
+
+ggplot() +
+  geom_rect(data = cluster_box2,
+            aes(xmin = X1 - 0.3, xmax = X2 + 0.3, ymin = 0, ymax = cluster_threshold2, color = cluster_box2.cluster),
+            fill = NA) +
+  geom_segment(data = segment(dtw_data2), aes(x = x, y = y, xend = xend, yend = yend)) +
+  scale_y_continuous("Distance") +
+  scale_x_continuous("", breaks = 1:n2, labels = labels_order2) +
+  guides(color = "none", fill = "none") +
+  labs(title = "DTW Distance-based Hierarchical Clustering Dendrogram",
+       subtitle = "Average Linkage") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette2[dtw_result2$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r, cache = TRUE, results = "hide"}
+# DTW distance-based hierarchical clustering with the single linkage
+Nclust = 6
+dtw_model3 = tsclust(series = dtw_covid_mat_list,
+                    type = "hierarchical",
+                    k = Nclust,
+                    distance = "dtw",
+                    control = hierarchical_control(method = "single"),
+                    preproc = NULL,
+                    trace = TRUE)
+
+dtw_data3 = dendro_data(dtw_model3, type = "rectangle")
+labels_order3 = dtw_data3$labels$label
+dtw_result3 = data.frame(label = names(dtw_covid_mat_list),
+                        cluster = factor(cutree(dtw_model3, k = Nclust)))
+dtw_data3[["labels"]] = merge(dtw_data3[["labels"]], dtw_result3, by = "label")
+dtw_result3 = full_join(dtw_result3, dtw_data3$labels, by = c("label", "cluster")) %>% arrange(x)
+```
+
+```{r, cache = TRUE}
+# dendrogram
+cluster_box3 = aggregate(x ~ cluster, label(dtw_data3), range)
+cluster_box3 = data.frame(cluster_box3$cluster, cluster_box3$x)
+cluster_threshold3 = mean(dtw_model3$height[length(dtw_model3$height) - ((Nclust-2):(Nclust-1))])
+
+numColors3 = length(levels(dtw_result3$cluster)) # number of colors = number of clusters
+getColors3 = scales::hue_pal() # Create a function that takes a number and returns a qualitative palette of that length
+myPalette3 = getColors(numColors3)
+names(myPalette3) = levels(dtw_result3$cluster) # Give every color an appropriate name
+n3 = nrow(dtw_result3) # number of countries
+
+ggplot() +
+  geom_rect(data = cluster_box3,
+            aes(xmin = X1 - 0.3, xmax = X2 + 0.3, ymin = 0, ymax = cluster_threshold3, color = cluster_box3.cluster),
+            fill = NA) +
+  geom_segment(data = segment(dtw_data3), aes(x = x, y = y, xend = xend, yend = yend)) +
+  scale_y_continuous("Distance") +
+  scale_x_continuous("", breaks = 1:n3, labels = labels_order3) +
+  guides(color = "none", fill = "none") +
+  labs(title = "DTW Distance-based Hierarchical Clustering Dendrogram",
+       subtitle = "Single Linkage") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), # remove grids
+        panel.background = element_blank(),
+        axis.text.x = element_text(colour = myPalette[dtw_result3$cluster], angle = 90, size = 8),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+```
+
+```{r}
+# merge clustering results and final COVID dataset
+dtw_hclust_df = dtw_result[, 1:2] %>% mutate(location = label) %>% dplyr::select(-label)
+dtw_hclust_df = dtw_hclust_df[, 2:1]
+colnames(dtw_hclust_df)[2] = "dtw_hclust"
+
+final_norm_imputed_covid_df3 = merge(final_norm_imputed_covid_df2, dtw_hclust_df, by = "location")
+```
+
+#### Evaluation - Stability
+```{r, results = "hide", cache = TRUE}
+# stability evaluation
+set.seed(3888) # set a seed to reproduce a consistent average adjusted Rand index for the report
+n = 100
+aris = c() # a vector of 100 simulated the adjusted Rand index values
+k = round(length(dtw_covid_mat_list) * 0.1) # 10% of all countries
+
+for (i in 1:n) {
+  # randomly remove 10% of all countries
+  random_countires = sample(1:length(dtw_covid_mat_list), k, replace = FALSE)
+  dtw_covid_mat_list2 = dtw_covid_mat_list[-random_countires]
+  length(dtw_covid_mat_list2)
+  
+  # clutser countries again without the randomly selected countries
+  Nclust = 5
+  dtw_model_eval = tsclust(series = dtw_covid_mat_list2,
+                           type = "hierarchical",
+                           k = Nclust,
+                           distance = "dtw",
+                           control = hierarchical_control(method = "complete"),
+                           preproc = NULL,
+                           trace = TRUE)
+
+  dtw_data_eval = dendro_data(dtw_model_eval, type = "rectangle")
+  labels_order_eval = dtw_data_eval$labels$label
+
+  dtw_result_eval = data.frame(label = names(dtw_covid_mat_list2),
+                               cluster = factor(cutree(dtw_model_eval, k = Nclust)))
+  
+  # clustering results
+  dtw_data_eval[["labels"]] = merge(dtw_data_eval[["labels"]], dtw_result_eval, by = "label")
+  dtw_result_eval = full_join(dtw_result_eval,
+                              dtw_data_eval$labels,
+                              by = c("label", "cluster")) %>% arrange(x)
+  
+  dtw_hclust_eval_df = dtw_result_eval[, 1:2] %>% mutate(location = label) %>% dplyr::select(-label)
+  dtw_hclust_eval_df = dtw_hclust_eval_df[, 2:1]
+  colnames(dtw_hclust_eval_df)[2] = "dtw_hclust_evaluation"
+  
+  # combine original clusters and new clusters except the removed clusters
+  dtw_stability_df = merge(dtw_hclust_df, dtw_hclust_eval_df, by = "location")
+  
+  # compute the adjusted Rand index
+  ari = adjustedRandIndex(dtw_stability_df$dtw_hclust, dtw_stability_df$dtw_hclust_evaluation)
+  aris = append(aris, ari)
+}
+```
+
+```{r, cache = TRUE}
+# adjusted Rand index box plot
+ari_p = ggplot() +
+  geom_boxplot(aes(x = aris), fill = "navy", alpha = 0.3) +
+  labs(x = "Adjusted Rand Index",
+       title = "Adjusted Rand Index Distribution of a 100-time Simulation \nfor the Stability of DTW Distance-based Hierarchical Clustering",) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+ari_p
+
+ari_stat = c(var(aris), min(aris), mean(aris), median(aris), max(aris)) %>% round(3) %>% matrix(nrow = 1)
+rownames(ari_stat) = "Value"
+colnames(ari_stat) = c("Variance", "Min", "Mean", "Median", "Max")
+ari_stat %>% kable(caption = "Adjusted Rand Index Summary Statistics")
+```
+
+```{r}
+# figure 2 for the report
+covid_lay = rbind(c(1,1,1,1,1,1,1,1,1),
+                  c(1,1,1,1,1,1,1,1,1),
+                  c(1,1,1,1,1,1,1,1,1),
+                  c(1,1,1,1,1,1,1,1,1),
+                  c(1,1,1,1,1,1,1,1,1),
+                  c(2,2,2,2,2,2,2,2,2),
+                  c(2,2,2,2,2,2,2,2,2),
+                  c(2,2,2,2,2,2,2,2,2))
+
+figure2 = text_grob("Figure 2: COVID-19 Clusters", size = 12)
+grid.arrange(covid_dtw_dendro, ari_p, layout_matrix = covid_lay, bottom = figure2)
+```
+
+```{r}
+# obtain new COVID-19 data set that includes the three features used for clustering and DTW distance-based clusters
+covid_cluster_df = final_norm_imputed_covid_df3
+
+# random forest to compute feature importance
+rf = randomForest(dtw_hclust ~ new_cases_smoothed_per_million +
+                     new_deaths_smoothed_per_million +
+                     stringency_index,
+                   data = covid_cluster_df, importance = TRUE)
+
+feat_imp_df = importance(rf) %>%
+  data.frame() %>%
+  mutate(feature = row.names(.))
+
+# visualize feature importance scores
+ggplot(feat_imp_df[tail(order(feat_imp_df$MeanDecreaseGini), 5), ],
+       aes(x = reorder(feature, MeanDecreaseGini),
+           y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Feature", y = "Mean Decrease in Gini Coefficient", title = "Feature Importance") +
+  theme_bw()
+```
+
+#### Evalutation - Feature Importance
+```{r}
+# compute the relative feature importance so they can add up to 1
+feat_imp_df = feat_imp_df %>% mutate(FeatureWeigths = round(MeanDecreaseGini / sum(MeanDecreaseGini), 2))
+
+# use the most recent data we have - 2022-05-12
+latest_covid_cluster_df = covid_cluster_df %>% filter(date == max(date))
+
+# compute our own COVID-19 risk
+latest_covid_cluster_df = latest_covid_cluster_df %>% mutate(covid_risk = (0.32*new_cases_smoothed_per_million) + 
+                                                               (0.33*new_deaths_smoothed_per_million) -
+                                                               (0.35*stringency_index))
+
+# label countries by their COVID-19 risks as of 2022-05-12
+latest_covid_cluster_df = latest_covid_cluster_df %>%
+  mutate(covid_risk_std = scale(covid_risk, center = TRUE, scale = TRUE),
+         covid_risk_class = case_when(
+           (covid_risk_std <= quantile(covid_risk_std, 0.33)) ~ "Low",
+           (covid_risk_std > quantile(covid_risk_std, 0.33) & covid_risk_std <= quantile(covid_risk_std, 0.67)) ~ "Medium",
+           (covid_risk_std > quantile(covid_risk_std, 0.67)) ~ "High"))
+
+# label counries by their travel restrictions as of 2022-05-12
+stringnecy_ind_std = covid_imputed_df %>% 
+  mutate(stringency_index_std = scale(stringency_index, center = TRUE, scale = TRUE)) %>% 
+  dplyr::select(date, location, stringency_index_std)
+
+latest_stringency_ind_std = stringnecy_ind_std %>%
+  filter(date == "2022-05-12") %>%
+  mutate(travel_restrictions = case_when(
+           (stringency_index_std <= quantile(stringency_index_std, 0.33)) ~ "Low",
+           (stringency_index_std > quantile(stringency_index_std, 0.33) &
+              stringency_index_std <= quantile(stringency_index_std, 0.67)) ~ "Medium",
+           (stringency_index_std > quantile(stringency_index_std, 0.67)) ~ "High"))
+
+# save the latest COVID-19 clusters
+latest_covid_df = merge(latest_covid_cluster_df, latest_stringency_ind_std %>% dplyr::select(date, location, travel_restrictions), by = c("date", "location"))
+write.csv(latest_covid_df, "latest_covid_cluster.csv")
+```
+
+
+### Socioeconomic Index Clustering
+
+##### Preprocessing
+```{r}
+# read socioeconomics index file
+datasetA_3 <- read.csv(file = 'index_cleaned.csv', row.names = NULL)
+# remove location "Armenia" due to missing data
+datasetA_3 = datasetA_3 %>%
+  filter(Location != "Armenia")
+# select year 2022 for most recent index data
+datasetA_3 <- datasetA_3[ (datasetA_3$year == 2022), ]
+```
+
+```{r}
+# filter variables that is going to be used for analysis
+col_names = c("Location", "Cost.of.Living.Index", "Rent.Index", 'Groceries.Index', "Restaurant.Price.Index", "Safety.Index", "Crime.Index")
+data_new = datasetA_3[col_names]
+```
+
+```{r}
+# change column names as more readable ones
+colnames(data_new) <- c("location", "cost", "rent", "groceries", "restaurant", "safety", "crime")
+# view first 6 rows of the data
+kable(head(data_new))
+```
+
+#### Summary of Data
+```{r}
+# view data summary
+print(summarytools::dfSummary(data_new), method = "render")
+```
+
+```{r}
+# compute correlation of all numeric variables
+M = cor(data_new[2:7])
+# visualise correlation analysis
+corrplot(M, method = 'color', order = 'alphabet', tl.cex = 0.8)
+# cost of living and groceries are highly correlated
+```
+
+```{r, warning=FALSE, message=FALSE}
+# visualise outliers using boxplot
+results <- data_new[2:7]
+boxplot(results, main = "Distribution of Each Index with Outliers")
+```
+
+```{r, fig.show='hide'}
+# Minimise outliers by replacing outlier values by median
+results$rent[results$rent %in% boxplot(results)$out] <- median(results$rent)
+results$groceries[results$groceries %in% boxplot(results)$out] <- median(results$groceries)
+results$cost[results$cost %in% boxplot(results)$out] <- median(results$cost)
+results$restaurant[results$restaurant %in% boxplot(results)$out] <- median(results$restaurant)
+results$safety[results$safety %in% boxplot(results)$out] <- median(results$safety)
+results$crime[results$crime %in% boxplot(results)$out] <- median(results$crime)
+```
+
+```{r}
+# boxplot of the data with less outliers
+boxplot(results, main = "Distribution of Each Index without Outliers")
+```
+
+
+```{r}
+# Removing the highly correlated features: groceries and restaurant
+clean_data1 <- data_new[-c(4:5)]
+results1 <- results[-c(3:4)]
+```
+
+```{r}
+# tandardise all numeric values:
+results_z1 <- as.data.frame(lapply(results1, scale))
+rownames(results_z1) = clean_data1$location
+```
+
+#### K-means clustering
+```{r, warning=FALSE, message=FALSE}
+# find optimal value of k
+# Elbow method
+p1 = fviz_nbclust(results_z1, kmeans, method = "wss") +
+  geom_vline(xintercept = 5, linetype = 2) + 
+  labs(subtitle = "Elbow method") 
+#silhouette method
+p2 = fviz_nbclust(results_z1, kmeans, method = "silhouette")+ 
+  labs(subtitle = "Silhouette method") 
+# Gap statistic
+set.seed(2022)
+p3 = fviz_nbclust(results_z1, kmeans,
+  nstart = 25,
+  method = "gap_stat",
+  nboot = 75 
+) +
+  labs(subtitle = "Gap statistic method")
+
+#visualise plots above
+lay <- rbind(c(1,2),
+             c(1,2),
+             c(3),
+             c(3))
+grid.arrange(p3, p1, p2, layout_matrix = lay)
+
+# elbow method: k = 5
+# silhouette method: k = 3
+# gap statistic: k = 5
+```
+
+#### k-means clustering (k = 5)
+```{r}
+# kmeans clustering with k = 5
+country_clusters <- kmeans(results_z1, 5)
+# assigning cluster labels for each countries as a data frame
+cluster_kmeans5 <- data.frame(clean_data1,
+  cluster = as.factor(country_clusters$cluster)
+)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Visualisation of k-means clustering with k = 5 using PCA
+fviz_cluster(country_clusters, results_z1, ellipse.type = "norm", cex = 0.1)
+```
+
+```{r, results = "hide"}
+# Silhouette coefficient of k = 5
+sil <- silhouette(country_clusters$cluster, dist(results_z1))
+p1 = fviz_silhouette(sil)
+```
+
+#### k-means clustering (k = 3)
+```{r}
+# k-means clustering: with k = 3
+country_clusters2 <- kmeans(results_z1, 3)
+```
+
+```{r}
+# assigning cluster labels for each countries as a data frame
+cluster_kmeans2 <- data.frame(clean_data1,
+  cluster = as.factor(country_clusters2$cluster)
+)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Visualisation of k-means clustering with k = 2 using PCA
+fviz_cluster(country_clusters2, results_z1, ellipse.type = "norm", cex = 0.1)
+```
+
+```{r, results = "hide"}
+# Silhouette coefficient of k = 3
+sil <- silhouette(country_clusters2$cluster, dist(results_z1))
+p2 = fviz_silhouette(sil)
+```
+
+```{r}
+# visualise ASW of both k = 3 and k = 5
+lay <- rbind(c(1,2),
+             c(1,2))
+grid.arrange(p1, p2, layout_matrix = lay)
+```
+ 
+#### Hierarchical clustering
+```{r, warning=FALSE, message=FALSE}
+# Hierarchical clustering with euclidean distance metric and average linkage method:
+dist_data_euc <- dist(results_z1, method = "euclidean")
+hc_countries_euc_ave <- hclust(dist_data_euc, method = "average")
+```
+
+```{r, results = "hide", echo=FALSE, error=FALSE, warning=FALSE, message=FALSE}
+# Visualising different linkage methods with Euclidean distance metrics:
+hclust_methods <- c("ward.D", "single", "complete", "average", "mcquitty", 
+        "median", "centroid", "ward.D2")
+country_dendlist <- dendlist()
+for(i in seq_along(hclust_methods)) {
+   hc_countries_euc <- hclust(dist_data_euc, method = hclust_methods[i])   
+   country_dendlist <- dendlist(country_dendlist, as.dendrogram(hc_countries_euc))
+}
+names(country_dendlist) <- hclust_methods
+par(mfrow = c(4,2))
+par(cex = 0.4)
+for(i in 1:8) {
+   country_dendlist[[i]] %>% set("branches_k_color", k=2) %>% plot(axes = FALSE)
+   title(names(country_dendlist)[i])
+}
+```
+
+```{r,error = FALSE, warning=FALSE, message=FALSE}
+# Default distance metrics is Euclidean
+# computing cophenetic coefficient for all different linkage method models below
+dist_data = dist(results_z1)
+h0=hclust(dist_data,method='ward.D')
+h1=hclust(dist_data,method='single')
+h2=hclust(dist_data,method='complete')
+h3=hclust(dist_data,method='average')
+h4=hclust(dist_data,method='mcquitty')
+h5=hclust(dist_data,method='median')
+h6=hclust(dist_data,method='centroid')
+h7=hclust(dist_data,method='ward.D2')
+c0=cophenetic(h0)
+c1=cophenetic(h1)
+c2=cophenetic(h2)
+c3=cophenetic(h3)
+c4=cophenetic(h4)
+c5=cophenetic(h5)
+c6=cophenetic(h6)
+c7=cophenetic(h7)
+cor1 = cor(dist_data,c0) 
+cor2 = cor(dist_data,c1) 
+cor3 = cor(dist_data,c2)
+cor4 = cor(dist_data,c3) 
+cor5 = cor(dist_data,c4)
+cor6 = cor(dist_data,c5)
+cor7 = cor(dist_data,c6)
+cor8 = cor(dist_data,c7)
+methods = c("average","single", "complete", "ward.D")
+correlations = c(cor4,cor2,cor3, cor1)
+```
+
+```{r}
+# computing agglomerative coefficient of the linakge methods below
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+# function to compute coefficient
+ac <- function(x) {
+  agnes(results_z1, method = x)$ac
+}
+# comparing results obtained above
+df2 = data.frame(map_dbl(m, ac), correlations)
+colnames(df2) = c("Agglomerative coefficient", "Cophenetic Coefficient")
+# results table
+kable(df2, digits = 3)
+```
+
+#### Average linkage method:
+```{r}
+# computing agglomerate coefficients of different distance metrics
+ag1 = agnes(results_z1, metric = "manhattan", method = "average")$ac
+ag2 = agnes(results_z1, metric = "euclidean", method = "average")$ac
+ag3 = agnes(results_z1, metric = "maximum", method = "average")$ac
+res = c(ag1, ag2, ag3)
+names_ag = c("Manhattan", "Euclidean", "Maximum")
+df6 = data.frame(names_ag, res)
+colnames(df6) = c("Distance Metrics", "Agglomerative Coefficient")
+# resulting table
+kable(df6, digits = 3)
+
+# Maximum distance metric:
+# Euclidean and maximum distance metrics was best with average linkage methods
+```
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# maximum distance hiearrchical clustering with average linkage
+dist_data_max = dist(results_z1, method="maximum")
+hc_countries_max_ave <- hclust(dist_data_max, method = "average")
+```
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Manhattan distance hiearrchical clustering with average linkage
+dist_data_man = dist(results_z1, method="manhattan")
+hc_countries_man_ave <- hclust(dist_data_man, method = "average")
+```
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Euclidean distance hiearrchical clustering with average linkage
+dist_data_euc = dist(results_z1, method="euclidean")
+hc_countries_euc_ave <- hclust(dist_data_euc, method = "average")
+```
+
+#### Ward.D Linkage method
+```{r}
+# computing agglomerate coefficients of different distance metrics
+ag1 = agnes(results_z1, metric = "manhattan", method = "ward")$ac
+ag2 = agnes(results_z1, metric = "euclidean", method = "ward")$ac
+ag3 = agnes(results_z1, metric = "maximum", method = "ward")$ac
+res = c(ag1, ag2, ag3)
+names_ag = c("Manhattan", "Euclidean", "Maximum")
+df6 = data.frame(names_ag, res)
+colnames(df6) = c("Distance Metrics", "Agglomerative Coefficient")
+# resulting table
+kable(df6, digits = 3)
+```
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# maximum distance hierarchical clustering with ward linkage
+hc_countries_max_ward <- hclust(dist_data_max, method = "ward.D")
+```
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Manhattan distance hierarchical clustering with ward linkage
+hc_countries_man_ward <- hclust(dist_data_man, method = "ward.D")
+```
+
+#### Optimal Number of Clusters
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+# Finding the Optimal tree height to cut: Elbow method, Average Silhouette Method, and Gap Statistic Method
+p1 = fviz_nbclust(results_z1, FUN = hcut, method = "silhouette") + labs(subtitle = "Silhouette method") 
+p2 = fviz_nbclust(results_z1, FUN = hcut, method = "wss") +
+   geom_vline(xintercept = 4, linetype = 2) +
+  labs(subtitle = "Elbow method") 
+set.seed(4)
+gap_stat <- clusGap(results_z1, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+p3 = fviz_gap_stat(gap_stat) + labs(subtitle = "Gap statistics method")
+lay <- rbind(c(1,2),
+             c(1,2),
+             c(3),
+             c(3))
+# visualise plots above
+grid.arrange(p3, p1, p2, layout_matrix = lay)
+
+# Elbow method k = 4
+# Average Silhouette Method k = 2
+# Gap statistic method k = 5
+```
+
+```{r}
+# cutting the tree with different k-values obtained above
+# dendogram visualisation of different k
+sub_grp4_ave <- cutree(hc_countries_euc_ave, k = 4) #cutting tree for k = 4
+plot(hc_countries_euc_ave, cex = 0.6, main="Dendrogram of Average linkage method with k = 4",
+        xlab="Countries")
+
+rect.hclust(hc_countries_euc_ave, k = 4, border = 2:4)
+sub_grp5_ave <- cutree(hc_countries_euc_ave, k = 5) #cutting tree for k = 5
+plot(hc_countries_euc_ave, cex = 0.6, main="Dendrogram of Average linkage method with k = 5",
+        xlab="Countries")
+
+rect.hclust(hc_countries_euc_ave, k = 5, border = 2:4)
+sub_grp2_ave <- cutree(hc_countries_euc_ave, k = 2) #cutting tree for k = 2
+plot(hc_countries_euc_ave, cex = 0.6,  main="Dendrogram of Average linkage method with k = 2",
+        xlab="Countries")
+
+rect.hclust(hc_countries_euc_ave, k = 2, border = 2:4)
+```
+
+```{r}
+# average linakge method
+# Evaluate and compare for each different k using ASW
+hc_cut5_ave <- hcut(results_z1, k = 5, hc_method = "average", hc_metric = "euclidean")
+p1 = fviz_silhouette(hc_cut5_ave) + labs(title = "ASW of Hierarchical clustering algorithm with average linkage method and k = 5") # ASW plot
+
+hc_cut4_ave <- hcut(results_z1, k = 4, hc_method = "average", hc_metric = "euclidean")
+p2 = fviz_silhouette(hc_cut4_ave) + labs(title = "ASW of Hierarchical clustering algorithm with average linkage method and k = 4") # ASW plot
+
+hc_cut2_ave <- hcut(results_z1, k = 2, hc_method = "average", hc_metric = "euclidean")
+p3 = fviz_silhouette(hc_cut2_ave) + labs(title = "ASW of Hierarchical clustering algorithm with average linkage method and k = 4") # ASW plot
+
+p1
+p2
+p3
+```
+
+```{r}
+# cutting the tree with different k-values obtained above
+# dendogram visualisation of different k
+sub_grp4_ward <- cutree(hc_countries_man_ward, k = 4) #cutting tree for k = 4
+plot(hc_countries_man_ward, cex = 0.6, main="Dendrogram of Ward linkage method with k = 4",
+        xlab="Countries")
+rect.hclust(hc_countries_man_ward, k = 4, border = 2:4)
+
+sub_grp5_ward <- cutree(hc_countries_man_ward, k = 5) #cutting tree for k = 5
+plot(hc_countries_man_ward, cex = 0.6, main="Dendrogram of Ward linkage method with k = 5",
+        xlab="Countries")
+rect.hclust(hc_countries_man_ward, k = 5, border = 2:4)
+
+sub_grp2_ward <- cutree(hc_countries_man_ward, k = 2) #cutting tree for k = 2
+plot(hc_countries_man_ward, cex = 0.6, main="Dendrogram of Ward linkage method with k = 2",
+        xlab="Countries")
+rect.hclust(hc_countries_man_ward, k = 2, border = 2:4)
+```
+
+```{r}
+# Evaluate and compare for different k, with linkage method "Ward.D" using ASW
+hc_cut5_ward <- hcut(results_z1, k = 5, hc_method = "ward.D", hc_metric = "manhattan")
+p1 = fviz_silhouette(hc_cut5_ward) + labs(title = "ASW of Hierarchical clustering algorithm with Ward's linkage method and k = 5") # ASW plot
+
+hc_cut4_ward <- hcut(results_z1, k = 4, hc_method = "ward.D", hc_metric = "manhattan")
+p2 = fviz_silhouette(hc_cut4_ward)+ labs(title = "ASW of Hierarchical clustering algorithm with Ward's linkage method and k = 4") # ASW plot
+
+hc_cut2_ward <- hcut(results_z1, k = 2, hc_method = "ward.D", hc_metric = "manhattan")
+p3 = fviz_silhouette(hc_cut2_ward)+ labs(title = "ASW of Hierarchical clustering algorithm with Ward's linkage method and k = 2") # ASW plot
+
+p1
+p2
+p3
+```
+
+```{r}
+# compare Ward.D vs Average
+# Result: Ward.D Linkage method
+k = c(5, 4, 2)
+Ward = c(0.39, 0.38, 0.43)
+Average = c( 0.38, 0.32, 0.37)
+df7 = data.frame(k, Ward, Average)
+kable(df7)
+```
+
+#### Summary
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+ # k-means -> k = 5
+results1$cluster <- (country_clusters$cluster)
+fviz_cluster(country_clusters, results_z1, ellipse.type = "norm", cex = 0.5) #visualise kmeans k = 5
+df3 <- data.frame( withinss=country_clusters$withinss )
+```
+
+```{r}
+# hierarchical -> k = 5 with Ward.D linkage method, manhattan distance metrics
+plot(hc_countries_man_ward, cex = 0.6)
+rect.hclust(hc_countries_man_ward, k = 5, border = 2:4)
+fviz_cluster(list(data = results_z1, cluster = sub_grp5_ward)) # visualise hierarchical clustering
+country_cluster_data_hierarchical5 <- data.frame(clean_data1,
+  cluster = as.factor(sub_grp5_ward)
+)
+```
+
+```{r}
+#boxplot of features in 5 clusters for within-cluster variability (k-means clusetering)
+data_num_kmeans4 = cluster_kmeans5[2:6] #selecting features
+data_long_kmeans4 = melt(data_num_kmeans4, id = "cluster")                     
+gg1 = ggplot(data_long_kmeans4, aes(x = variable, y = value, color = cluster)) + 
+  geom_boxplot() + labs(title = "K-means: Boxplot of 4 features in 5 clusters ") + scale_x_discrete(name ="Features") +
+  theme_bw()
+gg1
+```
+
+```{r}
+#boxplotc of features in 5 clusters for within-cluster variability (hierarchical clustering)
+data_num_hierarchical5 = country_cluster_data_hierarchical5[2:6]
+data_long_hierarchical5 = melt(data_num_hierarchical5, id = "cluster")                     
+ggplot(data_long_hierarchical5, aes(x = variable, y = value, color = cluster)) + 
+  geom_boxplot()+ labs(title = "Hierarchical: Boxplot of 4 features in 5 clusters ") + 
+  scale_x_discrete(name ="Features") +
+  theme_bw()
+```
+
+#### Final cluster
+```{r}
+# Dunn index
+set.seed(100)
+#compute dunn index for kmeans and hierarchical clustering algorithms obtained above
+dunn_km2 <- dunn(clusters = country_clusters2$cluster, Data = results_z1)
+dunn_km5 <- dunn(clusters = country_clusters$cluster, Data = results_z1)
+dunn_h_ward_4 <- dunn(clusters = sub_grp4_ward, Data = results_z1)
+dunn_h_ward_2 <- dunn(clusters = sub_grp2_ward, Data = results_z1)
+dunn_h_ward_5 <- dunn(clusters = sub_grp5_ward, Data = results_z1)
+Indexes = c(dunn_km2, dunn_km5, dunn_h_ward_4, dunn_h_ward_2, dunn_h_ward_5)
+Models = c("k-means: k=2", "k-means: k=5", "hclust,ward: k=4", "hclust,ward: k=2", "hclust,ward: k=5")
+df4 = data.frame(Models, Indexes)
+#resulting table 
+kable(df4, digits = 3)
+```
+
+```{r}
+#stability
+set.seed(3888)
+
+n = 1000
+result = c()
+for (i in 1:n){
+  df.new <- results_z1[-sample(1:nrow(results_z1), 8), ] # randomly remove 10% of data
+  data_keep_rows = rownames(df.new)
+  data_subset <- country_cluster_data_hierarchical5[country_cluster_data_hierarchical5$location %in% data_keep_rows, ]  
+  dist_data_man = dist(df.new, method="manhattan") #final model with manhattan distance
+  hc_countries_man_ward <- hclust(dist_data_man, method = "ward.D") #final model with ward linakge
+  sub_grp5_ward <- cutree(hc_countries_man_ward, k = 5) #final model with k = 5
+  mc_ari <- adjustedRandIndex(data_subset$cluster, sub_grp5_ward) #compute adjusted rand index
+  result[i] = mc_ari #store it in vector
+}
+
+round(mean(result), 2) # mean ari
+result<-as.data.frame(result)
+gg = ggplot(data = result, aes(x = result, y = NULL)) +
+  geom_boxplot(fill = "navy", alpha = 0.3) + 
+  labs(x = "Adjusted Rand Index",
+       title = "Adjusted Rand Index Distribution of a 1000-time simulation\nfor the Stability of Hierarchical Clustering") +
+  theme_bw()
+gg #visualise boxplot of ari 1000-time simulation
+```
+
+```{r, warning = FALSE}
+# combined figure for socioeconomic clusters
+p1 = fviz_silhouette(hc_cut5_ward, font.title = 10, print.summary = FALSE) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 8),
+        legend.key.size = unit(0.3, 'cm'),
+        plot.margin = unit(c(0, 0.3, 0, 0),"cm"),
+        legend.position = "bottom") # ASW plot for final cluster
+
+p2 = gg + 
+  theme(axis.title.y = element_blank(), 
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 6),
+        axis.title.x=element_text(size = 5)) #boxplot for stability
+
+p3 = fviz_dend(hc_cut5_ward, cex = 0.45, font.title = 10) +
+  labs(title = "Manhattan Distance-based Hierarchical Clustering Dendrogram") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 10)) #final cluster dendogram
+
+lay <- rbind(c(1,1,1,1,1,1,1,1,2,2,2,2),
+             c(1,1,1,1,1,1,1,1,2,2,2,2),
+             c(1,1,1,1,1,1,1,1,2,2,2,2),
+             c(1,1,1,1,1,1,1,1,3,3,3,3),
+             c(1,1,1,1,1,1,1,1,3,3,3,3)) #layout of the combined plots
+
+figure2 = text_grob("Figure 3: Best Socioeconomic clusters", size = 15)
+grid.arrange(p3, p1, p2, layout_matrix = lay, bottom = figure2) #visualise as 1 plot
+```
+
+### Final Combined Clusters
+```{r}
+# socioeconomic inde clusters
+hierarchical_5 = read.csv("hierarchical5.csv")
+cluster5_df <- hierarchical_5 %>% dplyr::select(location, cluster) %>% rename(idx_cluster = cluster)
+```
+
+```{r}
+# COVID-19 clusters
+DTW_cluster = read.csv("latest_covid_cluster.csv")
+covid_clust = dplyr::select(DTW_cluster, c("X", "location", "dtw_hclust")) %>% rename(covid_cluster = dtw_hclust)
+covid_clust <- dplyr::select(covid_clust, -c("X"))
+```
+
+```{r}
+#Check to see if both clusters have the same length
+length(covid_clust$location) == length(cluster5_df$location)
+
+# turn indexes into facotr
+covid_clust$covid_cluster <- as.factor(covid_clust$covid_cluster)
+cluster5_df$idx_cluster <- as.factor(cluster5_df$idx_cluster)
+```
+
+#### Combining two clustering systems
+```{r}
+combined_df = left_join(cluster5_df, covid_clust, by = "location")
+# TO DOUBLE CHECK - should return 1
+mean(cluster5_df$idx_cluster == combined_df$idx_cluster)
+```
+
+#### K-Modes
+```{r, echo = TRUE, eval = FALSE}
+# find optimal k
+k.max <- 10
+data <- combined_df[2:3]
+
+kmodes(data, 5, iter.max = 100, weighted = FALSE)
+
+#creating elbow plot
+wss <- sapply(1:k.max, 
+              function(num_clust){
+                sum(kmodes(data, num_clust, iter.max = 100 ,weighted = FALSE)$withindiff)})
+
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+exploratory_clust <- kmodes(data, 8, iter.max = 100 ,weighted = FALSE)
+combined_df1 = combined_df
+combined_df1$combined_cluster <- exploratory_clust$cluster
+```
+
+```{r, cache = TRUE}
+set.seed(3888)
+columnm.names = combined_df$location
+results_df = data.frame(matrix(ncol = 79, nrow = 1000))
+colnames(results_df) <- columnm.names
+# checking to see if clustering each iteration is consistent
+for(i in 1:1000){
+  cluster.results <- kmodes(combined_df[2:3], 8,  iter.max = 100, weighted = FALSE)
+  results_df[i, ] <- cluster.results$cluster
+}
+results_df[] <- lapply(results_df, factor)
+```
+
+```{r}
+#checking all cluster modes of country to see if we can pick most common cluster assigned to each country
+Modes <- function(x) {
+  ux <- unique(x)
+  tab <- tabulate(match(x, ux))
+  ux[tab == max(tab)]
+}
+
+cluster.mode <- lapply(results_df, Modes)
+
+#NOT VIABLE METHOD!!!!! most common cluster was 1 for every country
+```
+
+
+
+#### Hierachical Clustering
+#### IOF Dissimilarity Measure
+```{r}
+# IOF - FIgure 4.1 Finding optimal number of clusters for IOF
+rownames(combined_df) = combined_df$location
+nm.clust2 <- nomclust(combined_df[2:3],  measure = "iof", method = "complete", clu.high = 16)
+
+as.data.frame(nm.clust2$eval) %>% kable(digits = 3, caption = "IOF - Evaluation Criteria for each k")
+as.data.frame(nm.clust2$opt) %>% kable(digits = 3, caption = "IOF - Optimal Number of Clusters Based on the Evaluation Criteria")
+
+#dend.plot(nm.clust2, clusters = "PSFE", main = "IOF Distance")
+
+# Finding best K
+eval.plot(nm.clust2, c("AIC"))
+eval.plot(nm.clust2, c("WCE"))
+eval.plot(nm.clust2, c("WCM"))
+```
+
+
+```{r}
+## IOF with optimal clusters based on AIC
+final_clust_IOF.hclust <- as.hclust(nm.clust2)
+# cutting tree at optimal k
+final_vector_IOF9 <- as.numeric(cutree(final_clust_IOF.hclust, k = 7))
+xiof <- silhouette(final_vector_IOF9, iof(combined_df[2:3]))
+par(cex=0.6)
+dend.plot(nm.clust2, clusters = "AIC", main = "IOF Distance")
+
+iof_asw_plot = fviz_silhouette(xiof) +
+  labs(caption = "Within-cluster Mutability: 0.341 with k = 7") +
+  theme(plot.caption = element_text(size = 10))
+iof_asw_plot
+```
+
+```{r}
+#### LIN Dissimilarity Measure
+# find optimal number of clusters for LIN
+rownames(combined_df) = combined_df$location
+# Hierachical clustering based on LIN measure
+nm.clust3 <- nomclust(combined_df[2:3],  measure = "lin", method = "complete", clu.high = 16)
+
+as.data.frame(nm.clust3$eval) %>% kable(digits = 3, caption = "LIN - Evaluation Criteria for each k")
+as.data.frame(nm.clust3$opt) %>% kable(digits = 3, caption = "LIN - Optimal Number of Clusters Based on the Evaluation Criteria")
+
+#dend.plot(nm.clust3, clusters = "PSFE", main = "Dendrogram - lin distance")
+eval.plot(nm.clust3, c("AIC"))
+eval.plot(nm.clust3, c("WCE"))
+eval.plot(nm.clust3, c("WCM"))
+```
+
+
+```{r}
+## Lin method with optimal clusters
+final_combined_df <- combined_df 
+final_clust8 <- nm.clust3
+
+par(cex = 0.6)
+dend.plot(final_clust8, clusters = "AIC", main = "LIN Dissimilarity Measure-based Hierarchical Clustering Dendrogram")
+
+final_clust8.hclust <- as.hclust(final_clust8)
+
+# cutting tree at optimal k
+final_vector_8 <- as.numeric(cutree(final_clust8.hclust, k = 8))
+final_combined_df$combined_cluster <- final_vector_8
+write.csv(final_combined_df, "final_combined_clust1.csv") 
+
+# silhouette plot
+x1 <- silhouette(final_vector_8 , lin(combined_df[2:3]))
+
+lin_asw_plot = fviz_silhouette(x1, print.summary = FALSE) +
+  labs(caption = "Within-cluster Mutability: 0.305 with k = 8") +
+  theme(plot.caption = element_text(size = 10))
+lin_asw_plot
+```
+
+#### Evaluation - Stability
+```{r}
+library(mclust)
+set.seed(3888)
+n = 100
+combined_result = c()
+combined_df11 <- combined_df[2:3]
+data_cpy <- final_combined_df
+
+#evaluation method for stability
+for (i in 1:n){
+  df.new <- combined_df11[-sample(1:nrow(combined_df11), 6),]
+  data.kept <- rownames(df.new)
+  data.subset = data_cpy[data_cpy$location %in% data.kept, ]
+  sub_cluster <- nomclust(df.new, measure = "lin", method = "complete", clu.high = 16)
+  sub_cluster <- as.hclust(sub_cluster)
+  sub_13k <- as.numeric(cutree(sub_cluster, k = 13))
+  adj_randI <- adjustedRandIndex(data.subset$combined_cluster, sub_13k)
+  combined_result[i] <- adj_randI
+}
+
+result11 <- as.data.frame(result)
+
+final_clust_ari_p = result11 %>% ggplot() +
+  geom_boxplot(aes(x = result11$result), fill = "navy", alpha = 0.3) +
+  labs(x = "Adjusted Rand Index", 
+       title = "Adjusted Rand Index Distribution of a 1000-time Simulation \nfor the Stability of LIN-based Hierarchical Clustering") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+```
+
+### Data Integration for Dashboard
+```{python}
+#read the dataset and cut them into "Low,Medium and High "
+safety = pd.read_csv("Country Safety Index 2022.csv")
+safety.rename(columns={"Country": "Location"}, inplace=True)
+safety = safety[["Location", "Rank"]]
+safety["Safety"] = pd.cut(safety["Rank"], bins=3, labels=[
+                          "High", "Medium", "Low"])
+
+
+cost = pd.read_csv("Country Cost of Living Index 2022.csv")
+cost.rename(columns={"Country": "Location"}, inplace=True)
+cost = cost[["Location", "Rank"]]
+cost["Cost of Living"] = pd.cut(safety["Rank"], bins=3, labels=[
+                                "High", "Medium", "Low"])
+
+c_s = pd.merge(safety, cost, on="Location")[
+    ["Location", "Cost of Living", "Safety"]]
+
+qs = pd.read_csv("qs.csv")
+qs.rename(columns={"Country": "Location", "Link":"URL"}, inplace=True)
+
+qs_location_diff = ['Hong Kong SAR', 'Syrian Arab Republic', 'Palestinian Territory, Occupied', 'Czech Republic', 'Iran, Islamic Republic of', 'China (Mainland)', 'Macau SAR']
+covid_location_diff = ['Hong Kong', 'Syria', 'Palestine', 'Czechia', 'Iran', 'China', 'China']
+
+qs["Location"] = qs["Location"].replace(qs_location_diff, covid_location_diff)
+
+qs_cost_safe = pd.merge(qs, c_s, on="Location")
+
+covid_stuff = pd.read_csv("latest_covid_cluster.csv")[["location", "covid_risk_class", "travel_restrictions"]]
+covid_stuff.rename(columns={"covid_risk_class": "COVID Risk", "location": "Location", "travel_restrictions": "Travel Restrictions"}, inplace=True)
+
+vice_final = pd.merge(qs_cost_safe, covid_stuff, on="Location")
+
+#read the final cluster dataset
+cluster = pd.read_csv("final_combined_clust1.csv")
+cluster.rename(columns={"location": "Location", "combined_cluster": "Cluster"}, inplace=True)
+
+#merge the dataset
+final = pd.merge(vice_final, cluster, on="Location")
+
+# name the columns
+final_columns = ['Institution', 'Location', 'URL', 'Cluster', 'Total_score', 'Archaeology',
+                   'Architecture', 'Art & Design', 'Classics', 'English Language',
+                   'History', 'Linguistics', 'Modern Languages', 'Performing Arts',
+                   'Philosophy', 'Theology', 'Computer Science', 'Engineering - Chemical',
+                   'Engineering - Civil', 'Engineering - Electrical',
+                   'Engineering - Mechanical', 'Engineering - Mineral',
+                   'Engineering - Petroleum', 'Agriculture', 'Anatomy', 'Biological',
+                   'Dentistry', 'Medicine', 'Nursing', 'Pharmacy', 'Psychology',
+                   'Veterinary Science', 'Chemistry', 'Earth & Marine Sciences',
+                   'Environmental Sciences', 'Geography', 'Geology', 'Geophysics',
+                   'Materials Science', 'Mathematics', 'Physics', 'Accounting',
+                   'Anthropology', 'Business', 'Communication', 'Development Studies',
+                   'Economics & Econometrics', 'Education', 'Hospitality', 'Law',
+                   'Library', 'Politics', 'Social Policy', 'Sociology',
+                   'Sports-related Subjects', 'Statistics', 'COVID Risk', 'Cost of Living', 'Safety', 'Travel Restrictions']
+
+final = final[final_columns]
+
+# create the final dataset for the dashboard
+final.to_csv("final_dataset.csv", index=False)
+```
+
+
+
+
+
+
