@@ -16,7 +16,7 @@ To cluster countries based on COVID-19 data, I selected the following three COVI
 With these selected variables, I computed Dynamic Time Warping (DTW) distance matrix to identify similarity in shapes between two time series data. With this DTW distance matrix, I clustered countries using a hierarchical clutering algorithm with a complete linkage. The dendrogram below shows the resulting COVID-19 country clusters.
 
 <p align = "center">
-  <img src = "https://github.com/SanghyunKim1/Data-Science-Capstone-Project/blob/master/COVID-19%20Clusters.png" width="700" height="450">
+  <img src = "https://github.com/SanghyunKim1/Data-Science-Capstone-Project/blob/master/COVID-19%20Clusters.png" width="720" height="480">
   </p>
 
 ## Acknowledgement
