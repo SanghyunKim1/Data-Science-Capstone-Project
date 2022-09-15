@@ -20,4 +20,4 @@ With these selected variables, I computed Dynamic Time Warping (DTW) distance ma
   </p>
 
 ## Acknowledgement
-Since this is a group project, I would like to thank my group members: Christopher Tong, Ann Munkhbayar, Lawrence Chen, Chengyi Jin, and Xulin Wang.
+Since this was a group project, I would like to thank my group members: Christopher Tong, Ann Munkhbayar, Lawrence Chen, Chengyi Jin, and Xulin Wang.
